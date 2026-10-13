@@ -191,3 +191,20 @@ def test_parallel_requests_do_not_share_cursor(client):
     with ThreadPoolExecutor(12) as ex:
         codes = list(ex.map(lambda p: u.get(p).status_code, paths))
     assert set(codes) == {200}
+
+
+def test_sites_sorted_by_current_then_previous_shift(client):
+    boss = login(client, "boss@x.org", "Boss")
+    seed(boss)  # sites DAIRY, KN4, SOC (alphabetical by default)
+    boss.post("/api/admin/registry", json={"kind": "site", "code": "LG", "site_type": "loading"})
+    order = lambda: [s["code"] for s in boss.get("/api/registry").json()["site"]]
+    assert order() == ["DAIRY", "KN4", "LG", "SOC"]
+
+    boss.post("/api/shifts/start", json={"at": "2026-10-12T06:00"})
+    boss.post("/api/reports", json={"trucks": ["A", "B"], "verb": "LS", "site": "LG", "event_time": "2026-10-12T07:00"})
+    boss.post("/api/reports", json={"trucks": ["C"], "verb": "LS", "site": "KN4", "event_time": "2026-10-12T07:10"})
+    assert order() == ["LG", "KN4", "DAIRY", "SOC"]  # A,B counts as 2 events
+
+    boss.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})  # previous shift ends here
+    boss.post("/api/reports", json={"trucks": ["D"], "verb": "LS", "site": "SOC", "event_time": "2026-10-13T07:00"})
+    assert order() == ["SOC", "LG", "KN4", "DAIRY"]  # current shift first, then previous shift

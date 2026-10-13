@@ -79,6 +79,33 @@ def flags_for(a: trips.Analysis, report_id: int, truck_codes: list[str]) -> list
     return list(dict.fromkeys(f.text for t in truck_codes for f in a.flags.get((report_id, t), [])))
 
 
+def site_usage(conn, reg: Registry, shift: trips.Shift) -> dict[str, int]:
+    """Truck-events per canonical site inside a shift's window."""
+    rows = conn.execute(
+        "SELECT r.site_id, COUNT(*) AS n FROM reports r JOIN report_trucks rt ON rt.report_id = r.id "
+        "WHERE r.deleted = 0 AND r.site_id IS NOT NULL AND r.event_time >= ? AND (? IS NULL OR r.event_time < ?) "
+        "GROUP BY r.site_id",
+        (iso(shift.start), shift.end and iso(shift.end), shift.end and iso(shift.end))).fetchall()
+    out: dict[str, int] = {}
+    for r in rows:
+        site = reg.canon(r["site_id"])
+        if site:
+            out[site.code] = out.get(site.code, 0) + r["n"]
+    return out
+
+
+def sites_by_usage(conn, reg: Registry) -> list[dict]:
+    """Sites ordered by events in the current shift, then the previous shift (ties keep registry order)."""
+    sites = reg.listing("site")
+    shifts = load_shifts(conn)
+    if not shifts:
+        return sites
+    cur_i = next((i for i in range(len(shifts) - 1, -1, -1) if shifts[i].end is None), len(shifts) - 1)
+    cur = site_usage(conn, reg, shifts[cur_i])
+    prev = site_usage(conn, reg, shifts[cur_i - 1]) if cur_i > 0 else {}
+    return sorted(sites, key=lambda s: (-cur.get(s["code"], 0), -prev.get(s["code"], 0)))  # stable sort
+
+
 # ── writing ─────────────────────────────────────────────────────────────────
 
 def normalize(conn, reg: Registry, data: dict, user_id) -> dict:

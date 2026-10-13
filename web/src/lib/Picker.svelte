@@ -1,4 +1,5 @@
 <script>
+  import { flip } from 'svelte/animate'
   // Tile picker with an "other" tile for values not in the registry.
   let { options = [], value = $bindable(), multi = false, label = '', variant = 'code', placeholder = 'Other…' } = $props()
 
@@ -39,7 +40,8 @@
   </header>
   <div class="tiles {variant}">
     {#each tiles as t (t.code)}
-      <button type="button" class="tile" class:on={isOn(t.code)} class:new={t.isNew} title={t.title} onclick={() => toggle(t.code)}>
+      <button type="button" class="tile" class:on={isOn(t.code)} class:new={t.isNew} title={t.title} onclick={() => toggle(t.code)}
+              animate:flip={{ duration: 320 }}>
         <span class="code">{t.code}</span>
         {#if t.sub}<span class="sub">{t.sub}</span>{/if}
       </button>

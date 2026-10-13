@@ -121,7 +121,7 @@ def update_me(body: ProfileIn, user=Depends(current_user), conn=Depends(get_conn
 def get_registry(user=Depends(member), conn=Depends(get_conn)):
     reg = registry.Registry(conn)
     sh = reports.open_shift(conn)
-    return {"truck": reg.listing("truck"), "site": reg.listing("site"), "verb": reg.listing("verb"),
+    return {"truck": reg.listing("truck"), "site": reports.sites_by_usage(conn, reg), "verb": reg.listing("verb"),
             "shift": reports.shift_dict(conn, reg, sh) if sh else None}
 
 
