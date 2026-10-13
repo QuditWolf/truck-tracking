@@ -78,8 +78,26 @@ CREATE TABLE IF NOT EXISTS outbox (
     payload     TEXT NOT NULL,         -- JSON
     sent_at     TEXT,
     attempts    INTEGER NOT NULL DEFAULT 0,
-    error       TEXT
+    error       TEXT,
+    status      TEXT NOT NULL DEFAULT 'pending'   -- pending | sent | skipped | failed
 );
+
+-- Every WhatsApp message in or out. Links reports to the messages that carried them,
+-- so edits/deletes can reply to the original.
+CREATE TABLE IF NOT EXISTS wa_log (
+    id          INTEGER PRIMARY KEY,
+    at          TEXT NOT NULL,
+    direction   TEXT NOT NULL CHECK (direction IN ('in', 'out')),
+    jid         TEXT NOT NULL,
+    wa_id       TEXT,
+    kind        TEXT NOT NULL,         -- out: report|edit|delete|shift|summary|ack|ask|reply   in: event|command|chat|unparsed
+    report_id   INTEGER REFERENCES reports(id),
+    sender      TEXT,                  -- in: sender jid / name
+    text        TEXT NOT NULL,
+    from_me     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS wa_log_report ON wa_log(report_id);
+CREATE INDEX IF NOT EXISTS wa_log_waid ON wa_log(wa_id);
 
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,

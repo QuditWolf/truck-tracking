@@ -3,6 +3,7 @@ import tempfile
 
 os.environ["PADDY_DB"] = os.path.join(tempfile.mkdtemp(), "test.db")
 os.environ["DEV_LOGIN"] = "1"
+os.environ["WA_WORKER"] = "0"  # tests drive the relay directly
 os.environ["ADMIN_EMAILS"] = "boss@x.org"
 
 import pytest  # noqa: E402

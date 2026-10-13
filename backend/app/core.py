@@ -17,10 +17,19 @@ ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").sp
 DEV_LOGIN = os.environ.get("DEV_LOGIN", "") == "1"  # allow email-only login for local dev
 
 DEFAULT_SETTINGS = {
+    # WhatsApp — all editable in Admin → WhatsApp
+    "wa_enabled": "0",            # master switch: nothing is sent or read when off
+    "fleet_jid": "",              # fleet group (operators post events here)
+    "control_jid": "",            # control group (shifts, summaries, questions)
+    "relay_fleet": "1",           # relay web reports into the fleet group
+    "relay_control": "1",         # relay web reports into the control group
+    "read_fleet": "1",            # parse typed messages in the fleet group into reports
     "fleet_mode": "silent",       # silent: fleet group gets relays only | full: also confirmations + summaries
-    "summary_interval_min": "15",
+    "summary_interval_min": "15", # periodic summary during an open shift; 0 = off
+    "summary_on_shift_end": "1",
     "shift_stale_hours": "14",
 }
+WA_URL = os.environ.get("WA_URL", "http://127.0.0.1:3001")
 
 
 def now() -> datetime:
@@ -63,6 +72,7 @@ def connect(path: str | None = None) -> sqlite3.Connection:
 MIGRATIONS = [
     ("registry", "plate", "TEXT NOT NULL DEFAULT ''"),
     ("registry", "notes", "TEXT NOT NULL DEFAULT ''"),
+    ("outbox", "status", "TEXT NOT NULL DEFAULT 'pending'"),  # pending | sent | skipped | failed
 ]
 
 
@@ -102,4 +112,12 @@ def enqueue(conn, kind: str, payload: dict) -> None:
 
 def setting(conn, key: str) -> str:
     row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
-    return row["value"] if row else DEFAULT_SETTINGS[key]
+    return row["value"] if row else DEFAULT_SETTINGS.get(key, "")
+
+
+def flag(conn, key: str) -> bool:
+    return setting(conn, key) == "1"
+
+
+def set_setting(conn, key: str, value: str) -> None:
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))

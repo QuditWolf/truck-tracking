@@ -1,18 +1,36 @@
 """FastAPI app: JSON API under /api, built Svelte app served from / ."""
 
+import asyncio
+import hmac
+import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, core, registry, reports, summary
+from . import auth, core, inbound, registry, relay, reports, summary, wa_client
 from .auth import admin, current_user, get_conn, member
 
 STATIC = Path(__file__).parent.parent.parent / "web" / "dist"
+
+
+log = logging.getLogger("app")
+
+
+async def relay_worker():
+    """Drains the outbox and runs periodic summaries. Own connection, own thread per tick."""
+    conn = core.connect()
+    while True:
+        try:
+            await asyncio.to_thread(relay.run_once, conn)
+        except Exception:
+            log.exception("relay tick failed")
+        await asyncio.sleep(2)
 
 
 @asynccontextmanager
@@ -21,7 +39,10 @@ async def lifespan(app: FastAPI):
     core.init_db(conn)
     registry.seed_verbs(conn)
     app.state.conn = conn  # startup/maintenance only; requests get their own (auth.get_conn)
+    task = asyncio.create_task(relay_worker()) if os.environ.get("WA_WORKER", "1") == "1" else None
     yield
+    if task:
+        task.cancel()
     conn.close()
 
 
@@ -385,15 +406,102 @@ def admin_user_edit(user_id: int, body: UserPatch, user=Depends(admin), conn=Dep
     return {"ok": True}
 
 
+# ── WhatsApp ────────────────────────────────────────────────────────────────
+
+class InboundIn(BaseModel):
+    id: str
+    jid: str
+    text: str
+    from_me: bool = False
+    me: str = ""
+    sender: str = ""
+    sender_alt: str = ""
+    push_name: str = ""
+    ts: float = 0
+    quoted_id: Optional[str] = None
+
+
+@app.post("/api/wa/inbound", include_in_schema=False)
+def wa_inbound(body: InboundIn, x_wa_token: str = Header(""), conn=Depends(get_conn)):
+    if not hmac.compare_digest(x_wa_token, wa_client.TOKEN):
+        raise HTTPException(401)
+    try:
+        with core.tx(conn):
+            return {"result": inbound.handle(conn, body.model_dump())}
+    except ValueError as e:
+        return {"result": "error", "error": str(e)}
+
+
+@app.get("/api/admin/wa")
+def admin_wa(user=Depends(admin), conn=Depends(get_conn)):
+    counts = {r["status"]: r["n"] for r in conn.execute(
+        "SELECT status, COUNT(*) AS n FROM outbox GROUP BY status")}
+    failed = [dict(r) for r in conn.execute(
+        "SELECT id, at, kind, error FROM outbox WHERE status = 'failed' ORDER BY id DESC LIMIT 5")]
+    activity = [dict(r) for r in conn.execute("SELECT * FROM wa_log ORDER BY id DESC LIMIT 60")]
+    return {"status": wa_client.status(), "outbox": counts, "failed": failed, "activity": activity}
+
+
+@app.get("/api/admin/wa/groups")
+def admin_wa_groups(user=Depends(admin)):
+    try:
+        return wa_client.groups()
+    except wa_client.BridgeError as e:
+        raise HTTPException(503, str(e))
+
+
+@app.post("/api/admin/wa/logout")
+def admin_wa_logout(user=Depends(admin), conn=Depends(get_conn)):
+    try:
+        wa_client.logout()
+    except wa_client.BridgeError as e:
+        raise HTTPException(503, str(e))
+    with core.tx(conn):
+        core.audit(conn, user["id"], "logout", "whatsapp", None)
+    return {"ok": True}
+
+
+class WaTestIn(BaseModel):
+    target: str  # fleet | control
+
+
+@app.post("/api/admin/wa/test")
+def admin_wa_test(body: WaTestIn, user=Depends(admin), conn=Depends(get_conn)):
+    jid = core.setting(conn, f"{body.target}_jid")
+    if not jid:
+        bad(ValueError(f"no {body.target} group chosen"))
+    try:
+        relay.send(conn, jid, f"Truck tracking connected {core.now():%H:%M}", "test")
+    except wa_client.BridgeError as e:
+        raise HTTPException(503, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/admin/wa/summary")
+def admin_wa_summary(user=Depends(admin), conn=Depends(get_conn)):
+    s = summary.shift_summary(conn)
+    if not s:
+        bad(ValueError("no shifts yet"))
+    with core.tx(conn):
+        core.enqueue(conn, "notice", {"text": s["text"], "as": "summary"})
+    return {"ok": True}
+
+
 @app.get("/api/admin/settings")
 def admin_settings(user=Depends(admin), conn=Depends(get_conn)):
-    return {r["key"]: r["value"] for r in conn.execute("SELECT * FROM settings")}
+    return {k: core.setting(conn, k) for k in core.DEFAULT_SETTINGS}
 
 
 @app.put("/api/admin/settings")
 def admin_settings_put(body: dict[str, str], user=Depends(admin), conn=Depends(get_conn)):
     if body.get("fleet_mode", "silent") not in ("silent", "full"):
         bad(ValueError("fleet_mode must be silent or full"))
+    for k in ("wa_enabled", "relay_fleet", "relay_control", "read_fleet", "summary_on_shift_end"):
+        if k in body and str(body[k]) not in ("0", "1"):
+            bad(ValueError(f"{k} must be 0 or 1"))
+    for k in ("fleet_jid", "control_jid"):
+        if body.get(k) and not str(body[k]).endswith("@g.us"):
+            bad(ValueError(f"{k} must be a group id ending in @g.us"))
     with core.tx(conn):
         for k, v in body.items():
             if k in core.DEFAULT_SETTINGS:

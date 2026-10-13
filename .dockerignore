@@ -4,3 +4,4 @@ backend/.venv
 backend/data
 web/node_modules
 web/dist
+wa/node_modules

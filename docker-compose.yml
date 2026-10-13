@@ -4,6 +4,7 @@ services:
     image: paddy2026
     container_name: paddy2026
     restart: unless-stopped
+    init: true
     env_file: .env
     environment:
       PADDY_DB: /data/paddy.db

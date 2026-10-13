@@ -83,9 +83,20 @@ Load attributed to the shift + loading site where it happened; unload likewise.
   (loading, haul, unloading, cycle), inferred notes, flags, trip timelines.
 - Sent: every N min during an open shift, on demand, at shift end; day/season on the web.
 
-## WhatsApp (phase 2)
+## WhatsApp (phase 2 — done)
 
 Baileys runs in the same container as the API (second process, session on the /data volume).
+The bridge is thin: status/QR, list groups, send (optionally quoting), forward incoming group
+text. All decisions are in Python. Bridge ↔ API calls carry a token derived from PADDY_SECRET.
+
+- Outbox is drained every 2 s. WhatsApp off → items are skipped (never sent later). Disconnected →
+  kept up to 30 min, then skipped as stale. Retries 5×, then failed (shown in Admin).
+- `wa_log` records every message in/out with its report, so edits/deletes reply to the original.
+- Fleet group: strict parser; complete → report (source `wa`) + confirmation; attempt with a
+  known truck/verb but unclear → short question; plain chat → ignored. Phase 3 adds the LLM.
+- Senders are matched to signed-up users by phone (last 10 digits, LID-aware); otherwise a
+  WhatsApp-only user named after their WhatsApp name.
+- Periodic summary only when it changed; first one waits one interval after shift start.
 
 ```
 A,B LS KN4 14:32 Ravi
@@ -104,6 +115,6 @@ Modes (admin setting, no redeploy):
 
 1. Backend + Svelte PWA — **done**
 2. Baileys relay (outbox → both groups, edit/delete replies, periodic + end-of-shift summaries,
-   control-group commands: shift start/end, summary)
+   control-group commands: shift start/end, summary) — **done**
 3. LLM parse of free-text WA messages (OpenAI-compatible endpoint), same report shape
 4. Flutter app on the same API

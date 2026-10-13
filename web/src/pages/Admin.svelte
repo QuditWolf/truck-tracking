@@ -3,6 +3,7 @@
   import Modal from '../lib/Modal.svelte'
   import { api, dateTime, localInput } from '../lib/api.js'
   import { toast } from '../lib/stores.svelte.js'
+  import WhatsApp from './WhatsApp.svelte'
 
   let { onChange } = $props()
 
@@ -10,7 +11,6 @@
   let kind = $state('truck')
   let items = $state([])
   let users = $state([])
-  let settings = $state({})
   let shifts = $state([])
   let audit = $state([])
   let error = $state('')
@@ -19,7 +19,6 @@
     try {
       if (tab === 'registry') items = await api.get('/api/admin/registry')
       if (tab === 'users') users = await api.get('/api/admin/users')
-      if (tab === 'settings') settings = await api.get('/api/admin/settings')
       if (tab === 'shifts') shifts = await api.get('/api/shifts?limit=200')
       if (tab === 'audit') audit = await api.get('/api/admin/audit?limit=300')
     } catch (e) { toast(e.message, 'warn') }
@@ -111,8 +110,8 @@
 <div class="admin">
   <div class="toolbar">
     <div class="seg">
-      {#each ['registry', 'shifts', 'users', 'settings', 'audit'] as t}
-        <button class:on={tab === t} onclick={() => (tab = t)}>{t}</button>
+      {#each [['registry', 'Registry'], ['shifts', 'Shifts'], ['users', 'Users'], ['whatsapp', 'WhatsApp'], ['audit', 'Audit']] as [t, label]}
+        <button class:on={tab === t} onclick={() => (tab = t)}>{label}</button>
       {/each}
     </div>
   </div>
@@ -217,28 +216,8 @@
       </div>
     </div>
 
-  {:else if tab === 'settings'}
-    <form class="card settings" onsubmit={(e) => { e.preventDefault(); run(() => api.put('/api/admin/settings', settings), 'Settings saved') }}>
-      <div class="card-h"><h3>WhatsApp</h3></div>
-      <div class="card-b stack">
-        <fieldset class="modes">
-          <legend class="field-label">Fleet group mode</legend>
-          {#each [['silent', 'Silent', 'Fleet group only receives relayed reports. Confirmations, questions and summaries go to the control group.'],
-                  ['full', 'Full', 'Confirmations and summaries are also posted in the fleet group.']] as [v, t, d]}
-            <label class="mode" class:on={settings.fleet_mode === v}>
-              <input type="radio" bind:group={settings.fleet_mode} value={v} />
-              <b>{t}</b><span>{d}</span>
-            </label>
-          {/each}
-        </fieldset>
-        <div class="two">
-          <label class="field"><span>Summary every (minutes, 0 = off)</span><input class="input" type="number" min="0" bind:value={settings.summary_interval_min} /></label>
-          <label class="field"><span>Warn when a shift runs longer than (hours)</span><input class="input" type="number" min="1" bind:value={settings.shift_stale_hours} /></label>
-        </div>
-        {#if error}<p class="notice err">{error}</p>{/if}
-        <div><button class="btn signal">Save settings</button></div>
-      </div>
-    </form>
+  {:else if tab === 'whatsapp'}
+    <WhatsApp />
 
   {:else}
     <div class="card">
@@ -372,16 +351,6 @@
   .aliases { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
   .alias-add .input { width: 130px; }
 
-  .settings { max-width: 720px; }
-  .modes { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .modes legend { margin-bottom: 8px; }
-  .mode {
-    display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: var(--r); cursor: pointer;
-    box-shadow: inset 0 0 0 1px var(--hair); transition: box-shadow .15s, background .15s;
-  }
-  .mode input { position: absolute; opacity: 0; }
-  .mode span { font-size: 13px; color: var(--mute); }
-  .mode.on { box-shadow: inset 0 0 0 1.5px var(--ink); background: var(--surface); }
 
   .diff { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
   .diff pre { margin: 0; padding: 8px; border-radius: 6px; font-size: 10.5px; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
@@ -389,6 +358,6 @@
   .after { background: var(--moss-soft); }
 
   @media (max-width: 640px) {
-    .two, .modes, .diff { grid-template-columns: 1fr; }
+    .two, .diff { grid-template-columns: 1fr; }
   }
 </style>

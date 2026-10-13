@@ -9,3 +9,4 @@ web/dist/
 *.db-wal
 *.db-shm
 data/
+wa/node_modules/

@@ -145,6 +145,11 @@ def delete_report(conn, report_id: int, user_id: int) -> None:
 
 # ── shifts ──────────────────────────────────────────────────────────────────
 
+def _user_name(conn, user_id) -> str:
+    row = conn.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+    return row["name"] or "" if row else ""
+
+
 def shift_dict(conn, reg: Registry, row) -> dict:
     site = reg.canon(row["default_site_id"])
     return {"id": row["id"], "started_at": row["started_at"], "ended_at": row["ended_at"],
@@ -184,7 +189,7 @@ def start_shift(conn, user_id: int, site: Optional[str] = None, at: Optional[str
     row = conn.execute("SELECT * FROM shifts WHERE id = ?", (c.lastrowid,)).fetchone()
     out = shift_dict(conn, reg, row)
     audit(conn, user_id, "start", "shift", c.lastrowid, after=out)
-    enqueue(conn, "shift", {"action": "start", "shift": out})
+    enqueue(conn, "shift", {"action": "start", "shift": out, "user": _user_name(conn, user_id)})
     return out
 
 
@@ -199,7 +204,7 @@ def end_shift(conn, user_id: int, at: Optional[str] = None) -> dict:
     row = conn.execute("SELECT * FROM shifts WHERE id = ?", (cur["id"],)).fetchone()
     out = shift_dict(conn, Registry(conn), row)
     audit(conn, user_id, "end", "shift", cur["id"], before=dict(cur), after=out)
-    enqueue(conn, "shift", {"action": "end", "shift": out})
+    enqueue(conn, "shift", {"action": "end", "shift": out, "user": _user_name(conn, user_id)})
     return out
 
 
