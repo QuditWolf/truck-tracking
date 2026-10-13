@@ -77,7 +77,30 @@ MIGRATIONS = [
 ]
 
 
+def backup(conn: sqlite3.Connection, reason: str) -> Path | None:
+    """Consistent online copy (sqlite backup API) into <db dir>/backups/. Keeps the newest 20."""
+    if not Path(DB_PATH).exists() or conn.execute("PRAGMA database_list").fetchone()["file"] != str(Path(DB_PATH).resolve()):
+        return None
+    folder = Path(DB_PATH).parent / "backups"
+    folder.mkdir(exist_ok=True)
+    dest = folder / f"paddy-{datetime.now(IST):%Y%m%d-%H%M%S}-{reason}.db"
+    with sqlite3.connect(dest) as out:
+        conn.backup(out)
+    for old in sorted(folder.glob("paddy-*.db"))[:-20]:
+        old.unlink()
+    return dest
+
+
 def init_db(conn: sqlite3.Connection) -> None:
+    """Additive only: new tables/indexes (IF NOT EXISTS), new columns (MIGRATIONS), new settings
+    (INSERT OR IGNORE). Never drops or rewrites data. Backs up first if anything will change."""
+    tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    pending = [(t, c, d) for t, c, d in MIGRATIONS
+               if t in tables and c not in {r["name"] for r in conn.execute(f"PRAGMA table_info({t})")}]
+    if tables and (pending or not {"users", "registry", "reports", "shifts", "wa_log"} <= tables):
+        dest = backup(conn, "pre-migration")
+        if dest:
+            print(f"database backed up to {dest} before migrating", flush=True)
     conn.executescript((Path(__file__).parent / "schema.sql").read_text())
     for table, col, ddl in MIGRATIONS:
         if col not in {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}:

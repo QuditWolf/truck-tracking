@@ -267,3 +267,15 @@ def test_control_commands_take_a_time(client, wa):
     s = wa.boss.get("/api/shifts").json()[0]
     assert s["started_at"].endswith("05:30:00+05:30") or s["started_at"][11:16] == "05:30"
     assert s["default_site"] == "SOC"
+
+
+def test_own_echo_and_redelivery_are_ignored(client, wa):
+    wa.boss.post("/api/shifts/start", json={"site": "SOC"})
+    drain(client)
+    sent_id = "OUT1"  # the bot's "Shift start SOC @..." in control
+    echo = wa.texts(CONTROL)[0]
+    assert inbound(client, CONTROL, echo, sent_id, from_me=True) == "own"
+    assert inbound(client, FLEET, "A LS SOC", "M1") == "event"
+    assert inbound(client, FLEET, "A LS SOC", "M1") == "duplicate"
+    assert len(wa.boss.get("/api/feed").json()) == 1
+    assert len(wa.boss.get("/api/shifts").json()) == 1

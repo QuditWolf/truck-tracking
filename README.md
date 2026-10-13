@@ -34,6 +34,22 @@ curl http://10.0.0.4:8010/api/health
 
 Data lives in `/root/software/truck-tracking/data/` (database + WhatsApp session) — back it up.
 
+### Updating with live data
+
+Schema changes are additive only (new tables / columns / settings, never drops or rewrites), and
+the app copies the database to `data/backups/` automatically before applying any. Still, before
+an update during a running shift, take a manual copy:
+
+```bash
+cd /root/software/truck-tracking
+docker compose exec app .venv/bin/python -c "from app import core; print(core.backup(core.connect(), 'manual'))"
+git pull && docker compose up -d --build
+```
+
+The open shift, reports and the WhatsApp session carry over a restart. Queued WhatsApp messages
+younger than 30 min are still sent afterwards. Restore = stop the container, copy a backup over
+`data/paddy.db` (delete `paddy.db-wal` / `-shm`), start again.
+
 ### WhatsApp
 
 Everything is set in **Admin → WhatsApp**: scan the QR with the phone that should send messages

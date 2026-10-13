@@ -66,6 +66,14 @@ def _reply(conn, msg: dict, text: str, as_: str, report_id=None) -> None:
 def handle(conn, msg: dict) -> str:
     if not flag(conn, "wa_enabled"):
         return "off"
+    # Our own sends echoed back (e.g. after a bridge restart lost its in-memory list): never act on them.
+    if msg.get("id") and conn.execute("SELECT 1 FROM wa_log WHERE direction = 'out' AND wa_id = ?",
+                                      (msg["id"],)).fetchone():
+        return "own"
+    # Same WhatsApp message delivered twice: handle once.
+    if msg.get("id") and conn.execute("SELECT 1 FROM wa_log WHERE direction = 'in' AND wa_id = ? AND jid = ?",
+                                      (msg["id"], msg["jid"])).fetchone():
+        return "duplicate"
     if msg["jid"] == setting(conn, "control_jid") and msg["jid"]:
         return control(conn, msg)
     if msg["jid"] == setting(conn, "fleet_jid") and msg["jid"] and flag(conn, "read_fleet"):

@@ -17,6 +17,16 @@ Fleet event reporting for the paddy harvest. Successor to `02_truck_fleet` (2026
 - **All times IST**, minute precision for events and shifts.
 - **Bot text is compact, no emojis.**
 
+## Live data rules
+
+- Schema changes are additive: `CREATE ... IF NOT EXISTS`, `core.MIGRATIONS` for new columns,
+  `INSERT OR IGNORE` for new settings. Never drop, rename or rewrite rows in a migration.
+- Startup backs the DB up to `data/backups/` before any pending change (newest 20 kept).
+- Counts are recomputed from reports, so engine rule changes also change past summaries. The
+  end-of-shift WhatsApp summary (in `wa_log`) is the record of what was reported at the time.
+- Inbound WhatsApp: own sends (by id in `wa_log`) and re-deliveries are ignored, so a restart can
+  never replay a command or a report.
+
 ## Data model
 
 ```

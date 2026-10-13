@@ -149,9 +149,10 @@ def test_truck_plate_and_notes(client):
     assert (t["plate"], t["notes"]) == ("HR 26 AB 1234", "Driver: Raju")
 
 
-def test_migration_adds_columns_to_old_db(tmp_path):
+def test_migration_adds_columns_to_old_db(tmp_path, monkeypatch):
     import sqlite3
     from app import core
+    monkeypatch.setattr(core, "DB_PATH", str(tmp_path / "old.db"))
     old = sqlite3.connect(tmp_path / "old.db")
     old.execute("CREATE TABLE registry (id INTEGER PRIMARY KEY, kind TEXT, code TEXT, label TEXT, site_type TEXT, "
                 "merged_into INTEGER, active INTEGER DEFAULT 1, sort INTEGER DEFAULT 0, created_by INTEGER, created_at TEXT)")
@@ -161,6 +162,11 @@ def test_migration_adds_columns_to_old_db(tmp_path):
     core.init_db(conn)
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(registry)")}
     assert {"plate", "notes"} <= cols
+    backups = list((tmp_path / "backups").glob("paddy-*-pre-migration.db"))
+    assert len(backups) == 1  # copy taken before altering
+    assert sqlite3.connect(backups[0]).execute("PRAGMA table_info(registry)").fetchall()  # readable
+    core.init_db(conn)  # nothing pending now → no second backup
+    assert len(list((tmp_path / "backups").glob("*.db"))) == 1
 
 
 def test_first_report_can_start_shift_atomically(client):
