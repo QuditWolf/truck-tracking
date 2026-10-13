@@ -136,6 +136,7 @@ def test_seed_sites_idempotent(client):
     u = login(client, "u@x.org", "U")
     sites = {s["code"]: s for s in u.get("/api/registry").json()["site"]}
     assert len(sites) == 14 and sites["SKP"]["aliases"] == ["SDP"] and sites["BG"]["site_type"] == "depot"
+    assert [t["code"] for t in u.get("/api/registry").json()["truck"]] == ["A", "B", "C", "D", "E"]
     u.post("/api/shifts/start", json={})
     assert u.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "lal jameen"}).json()["site"] == "LJ"
 
