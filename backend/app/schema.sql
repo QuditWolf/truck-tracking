@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
     name        TEXT,              -- NULL until onboarding done
     phone       TEXT,
     disabled    INTEGER NOT NULL DEFAULT 0,
+    disabled_until TEXT,           -- set = temporary; NULL with disabled=1 = until re-enabled
     created_at  TEXT NOT NULL
 );
 

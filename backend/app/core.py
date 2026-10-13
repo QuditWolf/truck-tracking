@@ -78,6 +78,7 @@ MIGRATIONS = [
     ("registry", "plate", "TEXT NOT NULL DEFAULT ''"),
     ("registry", "notes", "TEXT NOT NULL DEFAULT ''"),
     ("outbox", "status", "TEXT NOT NULL DEFAULT 'pending'"),  # pending | sent | skipped | failed
+    ("users", "disabled_until", "TEXT"),  # temporary disable: access returns after this IST time
 ]
 
 

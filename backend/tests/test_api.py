@@ -219,3 +219,56 @@ def test_overnight_shift_label_shows_end_date():
     b = Shift(2, datetime(2026, 10, 14, 6, 0, tzinfo=IST), datetime(2026, 10, 14, 17, 0, tzinfo=IST))
     assert shift_label(a, [a, b]) == "Shift 13 Oct #1 18:00-14 Oct 05:00"
     assert shift_label(b, [a, b]) == "Shift 14 Oct #1 06:00-17:00"
+
+
+def test_admin_edits_users_and_disables_temporarily(client):
+    from datetime import timedelta
+    from app import core
+    boss = login(client, "boss@x.org", "Boss")
+    u = login(client, "u@x.org", "Ravi")
+    uid = u.get("/api/me").json()["id"]
+    r = boss.patch(f"/api/admin/users/{uid}", json={"name": "Ravi Kumar", "phone": "+91 99999 00000"}).json()
+    assert (r["name"], r["phone"]) == ("Ravi Kumar", "+91 99999 00000")
+    assert u.get("/api/me").json()["name"] == "Ravi Kumar"
+    assert boss.patch(f"/api/admin/users/{uid}", json={"phone": "123"}).status_code == 400
+
+    until = core.iso(core.now() + timedelta(days=1))
+    r = boss.patch(f"/api/admin/users/{uid}", json={"disabled": True, "disabled_until": until}).json()
+    assert r["disabled"] and r["disabled_until"].startswith(until[:16])
+    assert u.get("/api/me").status_code == 401  # signed out at once
+    assert u.post("/api/auth/dev", json={"email": "u@x.org"}).status_code == 403
+
+    # time passes: access returns by itself
+    client.app.state.conn.execute("UPDATE users SET disabled_until = '2020-01-01T00:00:00+05:30' WHERE id = ?", (uid,))
+    assert u.get("/api/me").status_code == 200
+
+    boss.patch(f"/api/admin/users/{uid}", json={"disabled": True})  # indefinitely
+    assert u.get("/api/me").status_code == 401
+    boss.patch(f"/api/admin/users/{uid}", json={"disabled": False})
+    assert u.get("/api/me").status_code == 200
+
+    boss_id = boss.get("/api/me").json()["id"]
+    assert boss.patch(f"/api/admin/users/{boss_id}", json={"disabled": True}).status_code == 400
+    assert boss.patch(f"/api/admin/users/{uid}", json={"disabled": True, "disabled_until": "2020-01-01T00:00"}).status_code == 400
+    audit = boss.get("/api/admin/audit?entity=user").json()
+    assert {"update", "disable", "enable"} <= {a["action"] for a in audit}
+
+
+def test_upgrade_leaves_existing_users_enabled(tmp_path, monkeypatch):
+    """Live upgrade: users table without disabled_until → column added, nobody becomes disabled."""
+    import sqlite3
+    from app import auth, core
+    monkeypatch.setattr(core, "DB_PATH", str(tmp_path / "live.db"))
+    old = sqlite3.connect(tmp_path / "live.db")
+    old.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, google_sub TEXT UNIQUE NOT NULL, email TEXT NOT NULL, "
+                "name TEXT, phone TEXT, disabled INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)")
+    old.executemany("INSERT INTO users (google_sub, email, name, phone, created_at) VALUES (?, ?, ?, ?, '2026-10-13')",
+                    [(f"g{i}", f"u{i}@x.org", f"U{i}", "9876543210") for i in range(5)])
+    old.commit()
+    old.close()
+    conn = core.connect(str(tmp_path / "live.db"))
+    core.init_db(conn)
+    rows = conn.execute("SELECT * FROM users").fetchall()
+    assert len(rows) == 5 and all(r["disabled_until"] is None for r in rows)
+    assert not any(auth.is_disabled(r) for r in rows)
+    assert all(auth.user_dict(r)["disabled"] is False for r in rows)

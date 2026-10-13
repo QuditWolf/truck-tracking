@@ -336,7 +336,10 @@ class MergeIn(BaseModel):
 
 
 class UserPatch(BaseModel):
-    disabled: bool
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    disabled: Optional[bool] = None
+    disabled_until: Optional[str] = None  # IST; with disabled=true → temporary
 
 
 @app.get("/api/admin/registry")
@@ -395,15 +398,45 @@ def admin_unmerge(item_id: int, user=Depends(admin), conn=Depends(get_conn)):
 def admin_users(user=Depends(admin), conn=Depends(get_conn)):
     rows = conn.execute("SELECT u.*, (SELECT COUNT(*) FROM reports r WHERE r.user_id = u.id AND r.deleted = 0) AS n "
                         "FROM users u ORDER BY u.created_at DESC").fetchall()
-    return [{**auth.user_dict(r), "reports": r["n"], "created_at": r["created_at"]} for r in rows]
+    return [{**auth.user_dict(r), "reports": r["n"], "created_at": r["created_at"],
+             "whatsapp_only": r["google_sub"].startswith("wa:")} for r in rows]
+
+
+def _valid_phone(phone: str) -> bool:
+    return len("".join(ch for ch in phone if ch.isdigit())) >= 10
 
 
 @app.patch("/api/admin/users/{user_id}")
 def admin_user_edit(user_id: int, body: UserPatch, user=Depends(admin), conn=Depends(get_conn)):
-    with core.tx(conn):
-        conn.execute("UPDATE users SET disabled = ? WHERE id = ?", (int(body.disabled), user_id))
-        core.audit(conn, user["id"], "disable" if body.disabled else "enable", "user", user_id)
-    return {"ok": True}
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "user not found")
+    before = {**auth.user_dict(row), "disabled_until": row["disabled_until"]}
+    changes: dict = {}
+    if body.name is not None:
+        if not body.name.strip():
+            bad(ValueError("name can't be empty"))
+        changes["name"] = body.name.strip()
+    if body.phone is not None:
+        if body.phone.strip() and not _valid_phone(body.phone):
+            bad(ValueError("phone needs at least 10 digits"))
+        changes["phone"] = body.phone.strip() or None
+    if body.disabled is not None:
+        if body.disabled and row["email"].lower() in core.ADMIN_EMAILS:
+            bad(ValueError("admins can't be disabled here"))
+        until = core.minute(body.disabled_until) if body.disabled and body.disabled_until else None
+        if until and core.to_ist(until) <= core.now():
+            bad(ValueError("disable-until must be in the future"))
+        changes["disabled"] = int(body.disabled)
+        changes["disabled_until"] = until
+    if changes:
+        with core.tx(conn):
+            conn.execute(f"UPDATE users SET {', '.join(f'{k} = ?' for k in changes)} WHERE id = ?",
+                         (*changes.values(), user_id))
+            action = "update" if body.disabled is None else ("disable" if body.disabled else "enable")
+            core.audit(conn, user["id"], action, "user", user_id, before=before, after=changes)
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return auth.user_dict(row)
 
 
 # ── WhatsApp ────────────────────────────────────────────────────────────────

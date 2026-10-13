@@ -85,6 +85,35 @@
   const reactivate = () => run(() => api.patch(`/api/admin/registry/${form.id}`, { active: true }), `${form.code} active`).then(() => (formOpen = false))
   const setType = (i, t) => run(() => api.patch(`/api/admin/registry/${i.id}`, { site_type: t || null }), `${i.code}: ${t || 'no type'}`)
 
+  // ── users ──
+  let userForm = $state(null)
+  let userOpen = $state(false)
+  let disableFor = $state('1d')
+  let disableUntil = $state('')
+  function openUser(u) {
+    userForm = { ...u, name: u.name || '', phone: u.phone || '' }
+    disableFor = '1d'; disableUntil = ''; error = ''
+    userOpen = true
+  }
+  async function saveUser() {
+    if (await run(() => api.patch(`/api/admin/users/${userForm.id}`, { name: userForm.name, phone: userForm.phone }), `${userForm.name} saved`)) userOpen = false
+  }
+  function untilFrom(choice) {
+    if (choice === 'forever') return null
+    if (choice === 'date') return disableUntil
+    const days = { '1d': 1, '3d': 3, '1w': 7 }[choice]
+    return localInput(new Date(Date.now() + days * 864e5).toISOString())
+  }
+  async function disableUser() {
+    const until = untilFrom(disableFor)
+    if (disableFor === 'date' && !until) { error = 'Pick a date and time'; return }
+    if (await run(() => api.patch(`/api/admin/users/${userForm.id}`, { disabled: true, disabled_until: until }),
+                  `${userForm.name} disabled${until ? ` until ${dateTime(until)}` : ''}`)) userOpen = false
+  }
+  async function enableUser() {
+    if (await run(() => api.patch(`/api/admin/users/${userForm.id}`, { disabled: false }), `${userForm.name} enabled`)) userOpen = false
+  }
+
   // ── shifts ──
   let shiftForm = $state(null)
   let shiftOpen = $state(false)
@@ -191,24 +220,21 @@
   {:else if tab === 'users'}
     <div class="card">
       <div class="table-wrap">
-        <table class="table">
-          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th class="num">Reports</th><th>Joined</th><th></th></tr></thead>
+        <table class="table clickable">
+          <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th class="num">Reports</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {#each users as u (u.id)}
-              <tr class:inactive={u.disabled}>
+              <tr class:inactive={u.disabled} onclick={() => openUser(u)}>
                 <td class="strong">{u.name || '—'} {#if u.is_admin}<span class="pill plain">admin</span>{/if}</td>
                 <td class="mono">{u.phone || ''}</td>
-                <td>{u.email}</td>
+                <td>{#if u.whatsapp_only}<span class="mute">WhatsApp only</span>{:else}{u.email}{/if}</td>
                 <td class="num">{u.reports}</td>
-                <td class="mono small">{dateTime(u.created_at)}</td>
-                <td class="num">
-                  {#if !u.is_admin}
-                    <button class="btn quiet sm" class:danger={!u.disabled}
-                      onclick={() => run(() => api.patch(`/api/admin/users/${u.id}`, { disabled: !u.disabled }), u.disabled ? `${u.name} enabled` : `${u.name} disabled`)}>
-                      {u.disabled ? 'Enable' : 'Disable'}
-                    </button>
-                  {/if}
+                <td>
+                  {#if u.disabled}
+                    <span class="pill warn">{u.disabled_until ? `off until ${dateTime(u.disabled_until)}` : 'disabled'}</span>
+                  {:else}<span class="pill empty">active</span>{/if}
                 </td>
+                <td class="num"><Icon name="chevron" size={15} /></td>
               </tr>
             {/each}
           </tbody>
@@ -303,6 +329,46 @@
     {/if}
     <button class="btn ghost" onclick={() => (formOpen = false)}>Cancel</button>
     <button class="btn signal" type="submit" form="regform">Save</button>
+  {/snippet}
+</Modal>
+
+<Modal bind:open={userOpen} title={userForm ? `Edit ${userForm.name || 'user'}` : ''}>
+  {#if userForm}
+    <form class="stack" id="userform" onsubmit={(e) => { e.preventDefault(); saveUser() }}>
+      <p class="mute small">{userForm.whatsapp_only ? 'Known from WhatsApp only (no sign-in yet).' : userForm.email} · {userForm.reports} reports</p>
+      <div class="two">
+        <label class="field"><span>Name</span><input class="input" bind:value={userForm.name} required /></label>
+        <label class="field"><span>Phone</span><input class="input mono" type="tel" bind:value={userForm.phone} placeholder="+91 98765 43210" /></label>
+      </div>
+      <p class="mute small">The phone number links this person's WhatsApp messages to their reports.</p>
+    </form>
+    {#if !userForm.is_admin}
+      <div class="section">
+        <span class="field-label">Access</span>
+        {#if userForm.disabled}
+          <p class="notice">Disabled {userForm.disabled_until ? `until ${dateTime(userForm.disabled_until)}` : 'until re-enabled'}.</p>
+          <div><button class="btn quiet sm" onclick={enableUser}>Enable now</button></div>
+        {:else}
+          <div class="row">
+            <select class="select sm grow" bind:value={disableFor}>
+              <option value="1d">Disable for 1 day</option>
+              <option value="3d">Disable for 3 days</option>
+              <option value="1w">Disable for 1 week</option>
+              <option value="date">Disable until…</option>
+              <option value="forever">Disable until re-enabled</option>
+            </select>
+            {#if disableFor === 'date'}<input class="input sm grow" type="datetime-local" bind:value={disableUntil} />{/if}
+            <button class="btn quiet sm danger" onclick={disableUser}>Disable</button>
+          </div>
+          <p class="mute small">They're signed out right away. Their reports stay.</p>
+        {/if}
+      </div>
+    {/if}
+    {#if error}<p class="notice err">{error}</p>{/if}
+  {/if}
+  {#snippet actions()}
+    <button class="btn ghost" onclick={() => (userOpen = false)}>Cancel</button>
+    <button class="btn signal" type="submit" form="userform">Save</button>
   {/snippet}
 </Modal>
 
