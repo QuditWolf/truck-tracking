@@ -75,7 +75,8 @@ def analysis(conn, reg: Optional[Registry] = None, draft: Optional[dict] = None,
 
 
 def flags_for(a: trips.Analysis, report_id: int, truck_codes: list[str]) -> list[str]:
-    return [f.text for t in truck_codes for f in a.flags.get((report_id, t), [])]
+    """Flag texts for a report, de-duplicated (multi-truck reports share e.g. 'outside any shift')."""
+    return list(dict.fromkeys(f.text for t in truck_codes for f in a.flags.get((report_id, t), [])))
 
 
 # ── writing ─────────────────────────────────────────────────────────────────

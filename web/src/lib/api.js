@@ -46,4 +46,4 @@ export function localInput(iso) {
 
 export const todayIST = () => localInput().slice(0, 10)
 
-export const line = (r) => [r.trucks.join(','), r.verb, r.site, time(r.event_time)].filter(Boolean).join(' ')
+export const line = (r) => [r.trucks.join(','), r.verb, r.site, '@' + time(r.event_time)].filter(Boolean).join(' ')

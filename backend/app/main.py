@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, core, inbound, registry, relay, reports, summary, wa_client
+from . import auth, core, inbound, registry, relay, reports, summary, wa, wa_client
 from .auth import admin, current_user, get_conn, member
 
 STATIC = Path(__file__).parent.parent.parent / "web" / "dist"
@@ -471,7 +471,7 @@ def admin_wa_test(body: WaTestIn, user=Depends(admin), conn=Depends(get_conn)):
     if not jid:
         bad(ValueError(f"no {body.target} group chosen"))
     try:
-        relay.send(conn, jid, f"Truck tracking connected {core.now():%H:%M}", "test")
+        relay.send(conn, jid, f"Truck tracking connected {wa.when(core.now())}", "test")
     except wa_client.BridgeError as e:
         raise HTTPException(503, str(e))
     return {"ok": True}

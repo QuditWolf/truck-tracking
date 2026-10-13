@@ -14,8 +14,8 @@ from .core import IST, enqueue, flag, setting
 from .registry import Registry
 from .relay import first_name
 
-HELP = ("Commands: shift start [SITE] | shift end | summary | summary last | summary today\n"
-        "Report format in fleet group: A,B LS KN4 (time optional: A LS KN4 14:32)")
+HELP = ("Commands: shift start [SITE] [@HH:MM] | shift end [@HH:MM] | summary | summary last | summary today\n"
+        "Fleet group: A,B LS KN4 @14:32 (time optional, - remark on next line)")
 
 
 def _digits(jid: str) -> str:
@@ -74,17 +74,20 @@ def handle(conn, msg: dict) -> str:
 
 
 def control(conn, msg: dict) -> str:
-    text = " ".join(msg["text"].lower().split())
+    sent = datetime.fromtimestamp(msg.get("ts") or core.now().timestamp(), IST)
+    toks, at = parse.take_time(parse._tokens(parse.split_lines(msg["text"])[0].lower()), sent)
+    text = " ".join(toks)
+    at = core.iso(at) if at else None
     quote = _quote(msg)
     m = re.match(r"^(?:shift start|start shift)\s*(.*)$", text)
     try:
         if m:
             _log(conn, msg, "command")
-            reports.start_shift(conn, sender_user(conn, msg), m.group(1).strip().upper() or None)
+            reports.start_shift(conn, sender_user(conn, msg), m.group(1).strip().upper() or None, at)
             return "shift_start"
         if text in ("shift end", "end shift"):
             _log(conn, msg, "command")
-            reports.end_shift(conn, sender_user(conn, msg))
+            reports.end_shift(conn, sender_user(conn, msg), at)
             return "shift_end"
     except ValueError as e:
         enqueue(conn, "notice", {"text": f"Not done: {e}", "as": "reply", "jids": [msg["jid"]], "quote": quote})
@@ -120,20 +123,20 @@ def fleet(conn, msg: dict) -> str:
 
     if p.ok:
         user_id = sender_user(conn, msg)
-        r = reports.create_report(conn, {"trucks": p.trucks, "verb": p.verb, "site": p.site,
+        r = reports.create_report(conn, {"trucks": p.trucks, "verb": p.verb, "site": p.site, "remarks": p.remarks,
                                          "event_time": core.iso(p.time)}, user_id, source="wa", wa_msg_id=msg["id"])
         _log(conn, msg, "event", r["id"])
         a = reports.analysis(conn)
         warnings = reports.flags_for(a, r["id"], r["trucks"])
-        text = wa.line({**r, "user": first_name(r["user"])}) + "".join(f"\n! {w}" for w in warnings)
-        _reply(conn, msg, text, "ack", r["id"])
+        _reply(conn, msg, wa.line({**r, "user": first_name(r["user"])}, warnings), "ack", r["id"])
         return "event"
 
     if parse.looks_like_event(msg["text"], reg):
         _log(conn, msg, "unparsed")
         who = first_name(msg.get("push_name") or "")
         need = ", ".join(p.missing)
-        _reply(conn, msg, f'? "{msg["text"]}"{" " + who if who else ""}: {need} unclear. Format: A,B LS KN4', "ask")
+        first = parse.split_lines(msg["text"])[0]
+        _reply(conn, msg, wa.message(f"? {first}", who, warnings=[f"{need} unclear, reply with e.g. A LS KN4"]), "ask")
         return "unparsed"
     _log(conn, msg, "chat")
     return "chat"

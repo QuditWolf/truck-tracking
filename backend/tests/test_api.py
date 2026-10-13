@@ -32,7 +32,7 @@ def test_report_flow_with_relay_and_flags(client):
     r = ravi.post("/api/reports", json={"trucks": ["A", "b"], "verb": "LS", "site": "soc",
                                         "event_time": "2026-10-13T08:10", "remarks": "wet paddy"}).json()
     assert r["trucks"] == ["A", "B"] and r["site"] == "SOC" and r["event_time"] == "2026-10-13T08:10:00+05:30"
-    assert wa.line(r) == "A,B LS SOC 08:10 Ravi\n- wet paddy"
+    assert wa.line(r) == "A,B LS SOC @13 Oct 08:10\n- wet paddy\n~Ravi"  # not today → dated
 
     # Amit is about to post the same thing — the check warns him
     chk = amit.post("/api/reports/check", json={"trucks": ["A"], "verb": "LS", "site": "SOC",
@@ -49,7 +49,7 @@ def test_report_flow_with_relay_and_flags(client):
     rows = client.app.state.conn.execute("SELECT kind, payload FROM outbox ORDER BY id").fetchall()
     assert [k["kind"] for k in rows] == ["shift", "report", "edit"]
     p = json.loads(rows[-1]["payload"])
-    assert wa.edit_line(p["before"], p["after"]) == "A,B ~LS~ LO SOC 08:10 Ravi\n- wet paddy"
+    assert wa.edit_line(p["before"], p["after"]) == "A,B ~LS~ LO SOC @13 Oct 08:10\n- wet paddy\n~Ravi"
 
     # only owner (or admin) edits
     assert amit.patch(f"/api/reports/{r['id']}", json={"verb": "LS"}).status_code == 403

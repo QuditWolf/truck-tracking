@@ -98,13 +98,21 @@ text. All decisions are in Python. Bridge ↔ API calls carry a token derived fr
   WhatsApp-only user named after their WhatsApp name.
 - Periodic summary only when it changed; first one waits one interval after shift start.
 
-```
-A,B LS KN4 14:32 Ravi
-- wet paddy, slow
+Every bot message uses the grammar operators type, so it parses back:
 
-edit (reply to original):  A,B ~LS~ LO KN4 14:32 Ravi
-delete (reply):            ~A,B LS KN4 14:32 Ravi~ deleted
 ```
+<content> @<time>          content: TRUCKS VERB [SITE] | Shift start [SITE] | Shift end
+- <remark>                 optional
+! <warning>                optional (confirmations, questions)
+~<name>                    who (first name)
+
+A,B LS KN4 @14:32          edit (reply):  A,B ~LS~ LO KN4 @14:32      delete (reply):  ~A,B LS KN4 @14:32~
+- wet paddy, slow                         ~Ravi                                        deleted ~Ravi
+~Ravi
+```
+
+Date only when not today: `@12 Oct 23:50`. Typed input may omit `@`, use `14.32`, any case,
+commas or spaces between trucks. Summaries keep their own layout, unsigned.
 
 Switches (Admin → WhatsApp, no redeploy): master on/off; **post in fleet group** (hard off: nothing
 is ever written there, all output goes to control, reading continues); relay to fleet; relay to

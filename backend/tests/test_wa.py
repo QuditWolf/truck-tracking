@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 
@@ -62,13 +63,13 @@ def test_web_report_relayed_to_both_groups_and_edit_replies_to_original(client, 
     boss = wa.boss
     boss.post("/api/shifts/start", json={"site": "SOC"})
     drain(client)
-    assert wa.texts(CONTROL)[0].startswith("Shift started") and wa.texts(CONTROL)[0].endswith("SOC Boss")
+    assert re.fullmatch(r"Shift start SOC @\d\d:\d\d\n~Boss", wa.texts(CONTROL)[0])
     assert wa.texts(FLEET) == []  # silent mode: notices stay in control
 
     r = boss.post("/api/reports", json={"trucks": ["A", "B"], "verb": "LS", "site": "SOC", "remarks": "wet"}).json()
     drain(client)
     line = wa.texts(FLEET)[-1]
-    assert line.startswith("A,B LS SOC ") and line.endswith(" Boss\n- wet")  # first name only
+    assert re.fullmatch(r"A,B LS SOC @\d\d:\d\d\n- wet\n~Boss", line)  # first name only
     assert wa.texts(CONTROL)[-1] == line
 
     relays = {j: f"OUT{i + 1}" for i, (j, t, _) in enumerate(wa.sent) if t == line}
@@ -80,7 +81,7 @@ def test_web_report_relayed_to_both_groups_and_edit_replies_to_original(client, 
 
     boss.delete(f"/api/reports/{r['id']}")
     drain(client)
-    assert wa.texts(FLEET)[-1].startswith("~A,B LO SOC") and wa.texts(FLEET)[-1].endswith("~ deleted")
+    assert re.fullmatch(r"~A,B LO SOC @\d\d:\d\d~\ndeleted ~Boss", wa.texts(FLEET)[-1])
 
 
 def test_master_switch_off_skips_everything(client, wa):
@@ -97,7 +98,7 @@ def test_relay_toggles_and_full_mode(client, wa):
     wa.boss.post("/api/shifts/start", json={})
     wa.boss.post("/api/reports", json={"trucks": ["C"], "verb": "LS", "site": "KN4"})
     drain(client)
-    assert any(t.startswith("Shift started") for t in wa.texts(FLEET))  # full mode: notices in fleet too
+    assert any(t.startswith("Shift start") for t in wa.texts(FLEET))  # full mode: notices in fleet too
     assert any(t.startswith("C LS KN4") for t in wa.texts(FLEET))
     assert not any(t.startswith("C LS KN4") for t in wa.texts(CONTROL))  # relay_control off
 
@@ -138,7 +139,7 @@ def test_unparsed_attempt_asks_and_chat_is_ignored(client, wa):
     assert inbound(client, FLEET, "A LS somewhere", "M1") == "unparsed"
     assert inbound(client, FLEET, "good morning all", "M2") == "chat"
     drain(client)
-    assert wa.texts(CONTROL)[-1].startswith('? "A LS somewhere" Amit: site unclear')
+    assert wa.texts(CONTROL)[-1] == "? A LS somewhere\n! site unclear, reply with e.g. A LS KN4\n~Amit"
 
 
 def test_sender_matched_to_signed_up_user_by_phone(client, wa):
@@ -158,10 +159,10 @@ def test_control_commands(client, wa):
     assert inbound(client, CONTROL, "shift end", "C5") == "error"
     drain(client)
     texts = wa.texts(CONTROL)
-    assert texts[0].startswith("Shift started") and "KN4" in texts[0]
+    assert texts[0].startswith("Shift start KN4 @")
     assert any(t.startswith("Shift ") and "Loaded 0" in t for t in texts)
     assert any(t.startswith("Commands:") for t in texts)
-    assert any(t.startswith("Shift ended") for t in texts)
+    assert any(t.startswith("Shift end @") for t in texts)
     assert texts[-1] == "Not done: no open shift"
     # summary replies quote the command
     assert next(q for j, t, q in wa.sent if "Loaded 0" in t)["id"] == "C2"
@@ -190,10 +191,10 @@ def test_periodic_summary_only_when_changed(client, wa):
     conn.execute("UPDATE shifts SET started_at = '2026-01-01T06:00:00+05:30'")
     drain(client)  # interval elapsed: summary sent (+ one stale-shift warning)
     assert len(summaries()) == 1
-    assert sum("Send 'shift end'" in t for t in wa.texts(CONTROL)) == 1
+    assert sum("send 'shift end'" in t for t in wa.texts(CONTROL)) == 1
     core.set_setting(conn, "_last_summary_at", "2000-01-01T00:00:00+05:30")
     drain(client)  # interval elapsed but nothing changed → no resend, no second warning
-    assert len(summaries()) == 1 and sum("Send 'shift end'" in t for t in wa.texts(CONTROL)) == 1
+    assert len(summaries()) == 1 and sum("send 'shift end'" in t for t in wa.texts(CONTROL)) == 1
     wa.boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"})
     core.set_setting(conn, "_last_summary_at", "2000-01-01T00:00:00+05:30")
     drain(client)
@@ -220,6 +221,10 @@ def test_parse_strict():
     assert parse("A LS", Reg(), sent, default_site="KN4").site == "KN4"
     assert not parse("A LS KN4 extra", Reg(), sent).ok
     assert f"{parse('A LS KN4 23:50', Reg(), sent).time:%d %H:%M}" == "12 23:50"  # future time → yesterday
+    assert f"{parse('A LS KN4 @12 Oct 23:50', Reg(), sent).time:%d %b %H:%M}" == "12 Oct 23:50"
+    assert f"{parse('A LS KN4 @ 14.05', Reg(), sent).time:%H:%M}" == "14:05"
+    p = parse("a b ls kn4 @14:00\n- half load\n- slow\n! ignored\n~Someone", Reg(), sent)
+    assert p.ok and p.trucks == ["A", "B"] and p.remarks == "half load; slow"
 
 
 def test_fleet_posting_switch_silences_fleet_group_entirely(client, wa):
@@ -240,3 +245,25 @@ def test_fleet_posting_switch_silences_fleet_group_entirely(client, wa):
     assert any("~LS~ LO" in t for t in control) and any(t.startswith("B LS SOC") for t in control)
     assert any(t.startswith("C LS SOC") for t in control)  # ack fell back to control
     assert inbound(client, FLEET, "D LS SOC", "M10") == "event"  # still reads the fleet group
+
+
+def test_bot_format_parses_back_and_remarks_are_kept(client, wa):
+    from datetime import timedelta
+    hm = f"{core.now() - timedelta(minutes=5):%H:%M}"
+    wa.boss.post("/api/shifts/start", json={"at": core.iso(core.now() - timedelta(minutes=30))})
+    drain(client)
+    # exactly what the bot writes, posted back by a human (copy/forward)
+    assert inbound(client, FLEET, f"A,B LS KN4 @{hm}\n- wet paddy\n~Ravi", "M1") == "event"
+    rep = wa.boss.get("/api/feed").json()[0]
+    assert rep["trucks"] == ["A", "B"] and rep["remarks"] == "wet paddy" and rep["event_time"][11:16] == hm
+    drain(client)
+    assert wa.texts(CONTROL)[-1] == f"A,B LS KN4 @{hm}\nwet paddy\n~Amit".replace("\nwet", "\n- wet")
+    # a line that isn't a remark/signature makes it ambiguous → question, nothing saved
+    assert inbound(client, FLEET, "C LS KN4\nD LS KN4", "M2") == "unparsed"
+
+
+def test_control_commands_take_a_time(client, wa):
+    inbound(client, CONTROL, "shift start soc @05:30", "C1")
+    s = wa.boss.get("/api/shifts").json()[0]
+    assert s["started_at"].endswith("05:30:00+05:30") or s["started_at"][11:16] == "05:30"
+    assert s["default_site"] == "SOC"

@@ -67,11 +67,9 @@ def _short(r: dict) -> dict:
 
 
 def shift_text(conn, payload: dict) -> str:
-    sh, who = payload["shift"], first_name(payload.get("user", ""))
-    if payload["action"] == "start":
-        t = f"{to_ist(sh['started_at']):%H:%M}"
-        return " ".join(x for x in ("Shift started", t, sh.get("default_site") or "", who) if x)
-    return " ".join(x for x in ("Shift ended", f"{to_ist(sh['ended_at']):%H:%M}", who) if x)
+    sh, who, action = payload["shift"], first_name(payload.get("user", "")), payload["action"]
+    at = sh["started_at"] if action == "start" else sh["ended_at"]
+    return wa.shift_line(action, at, sh.get("default_site") or "", who)
 
 
 def messages_for(conn, kind: str, payload: dict) -> list[tuple]:
@@ -176,8 +174,8 @@ def tick(conn) -> None:
     if stale and now - to_ist(sh["started_at"]) > timedelta(hours=stale) \
             and setting(conn, "_stale_warned") != str(sh["id"]):
         set_setting(conn, "_stale_warned", str(sh["id"]))
-        core.enqueue(conn, "notice", {"text": f"Shift open since {to_ist(sh['started_at']):%d %b %H:%M}. "
-                                              f"Send 'shift end' if it's over.",
+        core.enqueue(conn, "notice", {"text": f"? Shift open since {to_ist(sh['started_at']):%d %b %H:%M}\n"
+                                              f"! send 'shift end' if it's over",
                                       "jids": [setting(conn, "control_jid")]})
 
 

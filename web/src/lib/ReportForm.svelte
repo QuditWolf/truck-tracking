@@ -104,8 +104,8 @@
         <span>{trucks.join(',')}</span>
         <span class="t-verb">{verb}</span>
         {#if site}<span>{site}</span>{/if}
-        <span class="t-dim">{shownTime}</span>
-        {#if me}<span class="t-user">{me.name}</span>{/if}
+        <span class="t-dim">@{shownTime}</span>
+        {#if me}<span class="t-user">~{me.name.split(' ')[0]}</span>{/if}
       {:else}
         <span class="t-hint">Pick a truck and an event</span>
       {/if}
