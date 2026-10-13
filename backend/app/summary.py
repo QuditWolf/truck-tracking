@@ -12,7 +12,12 @@ from .reports import analysis, load_shifts
 def shift_label(shift: trips.Shift, all_shifts: list[trips.Shift]) -> str:
     same_day = [s for s in all_shifts if s.start.date() == shift.start.date()]
     n = sorted(same_day, key=lambda s: s.start).index(shift) + 1
-    end = f"{shift.end:%H:%M}" if shift.end else "now"
+    if not shift.end:
+        end = "now"
+    elif shift.end.date() != shift.start.date():
+        end = f"{shift.end:%d %b %H:%M}"  # overnight: say which day it ended
+    else:
+        end = f"{shift.end:%H:%M}"
     return f"Shift {shift.start:%d %b} #{n} {shift.start:%H:%M}-{end}"
 
 

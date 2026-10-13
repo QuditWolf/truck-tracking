@@ -208,3 +208,14 @@ def test_sites_sorted_by_current_then_previous_shift(client):
     boss.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})  # previous shift ends here
     boss.post("/api/reports", json={"trucks": ["D"], "verb": "LS", "site": "SOC", "event_time": "2026-10-13T07:00"})
     assert order() == ["SOC", "LG", "KN4", "DAIRY"]  # current shift first, then previous shift
+
+
+def test_overnight_shift_label_shows_end_date():
+    from datetime import datetime
+    from app.core import IST
+    from app.summary import shift_label
+    from app.trips import Shift
+    a = Shift(1, datetime(2026, 10, 13, 18, 0, tzinfo=IST), datetime(2026, 10, 14, 5, 0, tzinfo=IST))
+    b = Shift(2, datetime(2026, 10, 14, 6, 0, tzinfo=IST), datetime(2026, 10, 14, 17, 0, tzinfo=IST))
+    assert shift_label(a, [a, b]) == "Shift 13 Oct #1 18:00-14 Oct 05:00"
+    assert shift_label(b, [a, b]) == "Shift 14 Oct #1 06:00-17:00"
