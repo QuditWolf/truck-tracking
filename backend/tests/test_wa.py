@@ -178,7 +178,7 @@ def test_admin_wa_endpoints(client, wa):
     assert st["status"]["state"] == "open"
     assert [g["subject"] for g in wa.boss.get("/api/admin/wa/groups").json()] == ["Fleet", "Control"]
     assert wa.boss.post("/api/admin/wa/test", json={"target": "control"}).status_code == 200
-    assert wa.texts(CONTROL)[-1].startswith("Truck tracking connected")
+    assert wa.texts(CONTROL)[-1].startswith("Dayalbagh Truck Tracking connected")
     assert wa.boss.put("/api/admin/settings", json={"fleet_jid": "notagroup"}).status_code == 400
 
 

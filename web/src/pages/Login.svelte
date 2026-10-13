@@ -34,7 +34,7 @@
 <AuthFrame>
   <div class="head">
     <h2>Sign in</h2>
-    <p class="mute">Use your Google account. First time? You'll add your name and phone next.</p>
+    <p class="mute">With your Google account. First time: you'll be asked for your name and phone number.</p>
   </div>
   {#if config.google_client_id}<div class="gbtn" bind:this={btn}></div>{/if}
   {#if config.dev_login}
@@ -49,7 +49,8 @@
 
 <style>
   .head { display: flex; flex-direction: column; gap: 6px; }
-  h2 { font-size: 26px; letter-spacing: -0.035em; }
+  h2 { font-size: 17px; }
+  .head p { font-size: 13.5px; }
   .gbtn { min-height: 44px; }
   .dev { display: flex; flex-direction: column; gap: 10px; padding-top: 18px; border-top: 1px solid var(--hair); }
   .dev .btn { height: 44px; }

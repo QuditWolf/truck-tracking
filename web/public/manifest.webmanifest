@@ -1,6 +1,6 @@
 {
-  "name": "Truck tracking",
-  "short_name": "Trucks",
+  "name": "Dayalbagh Truck Tracking",
+  "short_name": "DB Trucks",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f3f1ec",

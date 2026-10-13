@@ -40,7 +40,7 @@ async function connect() {
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }))
   sock = makeWASocket({
     version, auth, logger: pino({ level: 'warn' }),
-    browser: Browsers.ubuntu('Truck tracking'),
+    browser: Browsers.ubuntu('Dayalbagh Truck Tracking'),
     markOnlineOnConnect: false, syncFullHistory: false, generateHighQualityLinkPreview: false,
   })
   sock.ev.on('creds.update', saveCreds)

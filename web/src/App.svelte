@@ -50,7 +50,7 @@
 </script>
 
 {#if !config}
-  <div class="splash"><span class="mark">TT</span></div>
+  <div class="splash"><span class="mark">DB</span></div>
 {:else if !me}
   <Login {config} onLogin={(u) => (me = u)} />
 {:else if !me.onboarded}
@@ -58,7 +58,7 @@
 {:else}
   <div class="app">
     <aside class="side">
-      <a class="brand" href="#report"><span class="mark">TT</span><span>Truck tracking</span></a>
+      <a class="brand" href="#report"><span class="mark">DB</span><span class="name"><small>Dayalbagh</small>Truck Tracking</span></a>
       <nav>
         {#each nav as [k, label, icon]}
           <a href="#{k}" class:on={page === k}><Icon name={icon} size={17} />{label}</a>
@@ -73,7 +73,7 @@
 
     <div class="main">
       <header class="top">
-        <a class="brand compact" href="#report"><span class="mark">TT</span></a>
+        <a class="brand compact" href="#report"><span class="mark">DB</span></a>
         <h1>{title}</h1>
         {#if registry}<ShiftControl shift={registry.shift} sites={registry.site} onChange={refresh} />{/if}
         <button class="avatar compact" title="Sign out {me.email}" onclick={logout}>{initials}</button>
@@ -132,6 +132,8 @@
     background: var(--paper-2);
   }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; text-decoration: none; color: var(--ink); font-weight: 650; letter-spacing: -0.02em; }
+  .brand .name { display: flex; flex-direction: column; line-height: 1.15; }
+  .brand .name small { font: 600 10px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
   .side nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
   .side nav a {
     display: flex; align-items: center; gap: 11px; height: 38px; padding: 0 10px; border-radius: 8px;

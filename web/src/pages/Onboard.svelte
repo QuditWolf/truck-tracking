@@ -19,8 +19,8 @@
 <AuthFrame>
   <div class="head">
     <span class="eyebrow">{me.email}</span>
-    <h2>About you</h2>
-    <p class="mute">Your first name appears next to every report you send, here and on WhatsApp.</p>
+    <h2>Your details</h2>
+    <p class="mute">Your first name is shown with each report you send, here and on WhatsApp.</p>
   </div>
   <form onsubmit={save} class="form">
     <label class="field"><span>Name</span><input class="input" bind:value={name} required autocomplete="given-name" placeholder="Ravi" /></label>
@@ -32,7 +32,8 @@
 
 <style>
   .head { display: flex; flex-direction: column; gap: 6px; }
-  h2 { font-size: 26px; letter-spacing: -0.035em; }
+  h2 { font-size: 17px; }
+  .head p { font-size: 13.5px; }
   .form { display: flex; flex-direction: column; gap: 14px; }
   .form .btn { height: 46px; }
 </style>
