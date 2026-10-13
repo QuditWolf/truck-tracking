@@ -1,4 +1,4 @@
-# paddy2026
+# truck-tracking
 
 Truck event reporting for the paddy harvest: a mobile web app (PWA) feeding a FastAPI backend,
 mirrored to WhatsApp. See [DESIGN.md](DESIGN.md) for the model and decisions.
@@ -21,18 +21,18 @@ With `DEV_LOGIN=1` the login page shows an email box instead of Google sign-in.
 
 ## Deploy
 
-Docker host `10.0.0.4`, code in `/software/paddy2026`, served at `10.0.0.4:8010` (VPN only).
+Docker host `10.0.0.4`, code in `/software/truck-tracking`, served at `10.0.0.4:8010` (VPN only).
 nginx on the proxy box terminates HTTPS for `truck.qutrit.org` — see `deploy/nginx-truck.qutrit.org.conf`.
 
 ```bash
-cd /software/paddy2026
+cd /software/truck-tracking
 cp .env.example .env            # fill in GOOGLE_CLIENT_ID, PADDY_SECRET, ADMIN_EMAILS
 docker compose up -d --build
 docker compose exec app .venv/bin/python -m app.seed   # once: sites + aliases
 curl http://10.0.0.4:8010/api/health
 ```
 
-Data lives in `/software/paddy2026/data/` — back it up. Google OAuth client: Web application,
+Data lives in `/software/truck-tracking/data/` — back it up. Google OAuth client: Web application,
 authorised JavaScript origin `https://truck.qutrit.org`, consent screen published.
 
 ## Layout
