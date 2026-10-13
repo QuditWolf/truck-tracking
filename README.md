@@ -21,18 +21,18 @@ With `DEV_LOGIN=1` the login page shows an email box instead of Google sign-in.
 
 ## Deploy
 
-Docker host `10.0.0.4`, code in `/software/truck-tracking`, served at `10.0.0.4:8010` (VPN only).
+Docker host `10.0.0.4`, code in `/root/software/truck-tracking`, served at `10.0.0.4:8010` (VPN only).
 nginx on the proxy box terminates HTTPS for `truck.qutrit.org` — see `deploy/nginx-truck.qutrit.org.conf`.
 
 ```bash
-cd /software/truck-tracking
+cd /root/software/truck-tracking
 cp .env.example .env            # fill in GOOGLE_CLIENT_ID, PADDY_SECRET, ADMIN_EMAILS
 docker compose up -d --build
 docker compose exec app .venv/bin/python -m app.seed   # once: sites + aliases
 curl http://10.0.0.4:8010/api/health
 ```
 
-Data lives in `/software/truck-tracking/data/` (database + WhatsApp session) — back it up.
+Data lives in `/root/software/truck-tracking/data/` (database + WhatsApp session) — back it up.
 
 ### WhatsApp
 
