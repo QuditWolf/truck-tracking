@@ -106,7 +106,9 @@ edit (reply to original):  A,B ~LS~ LO KN4 14:32 Ravi
 delete (reply):            ~A,B LS KN4 14:32 Ravi~ deleted
 ```
 
-Modes (admin setting, no redeploy):
+Switches (Admin → WhatsApp, no redeploy): master on/off; **post in fleet group** (hard off: nothing
+is ever written there, all output goes to control, reading continues); relay to fleet; relay to
+control; read fleet group; summary at shift end. Modes:
 
 - `silent` — fleet group gets relays only; confirmations, questions, summaries → control group
 - `full`   — confirmations and summaries also go to the fleet group

@@ -21,6 +21,7 @@ DEFAULT_SETTINGS = {
     "wa_enabled": "0",            # master switch: nothing is sent or read when off
     "fleet_jid": "",              # fleet group (operators post events here)
     "control_jid": "",            # control group (shifts, summaries, questions)
+    "send_fleet": "1",            # hard switch: when off, nothing at all is posted in the fleet group
     "relay_fleet": "1",           # relay web reports into the fleet group
     "relay_control": "1",         # relay web reports into the control group
     "read_fleet": "1",            # parse typed messages in the fleet group into reports

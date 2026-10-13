@@ -75,7 +75,14 @@ def shift_text(conn, payload: dict) -> str:
 
 
 def messages_for(conn, kind: str, payload: dict) -> list[tuple]:
-    """(jid, text, kind, report_id, quote) for one outbox item."""
+    """(jid, text, kind, report_id, quote) for one outbox item, minus the fleet group if posting there is off."""
+    msgs = _messages_for(conn, kind, payload)
+    if not flag(conn, "send_fleet"):
+        msgs = [m for m in msgs if m[0] != setting(conn, "fleet_jid")]
+    return msgs
+
+
+def _messages_for(conn, kind: str, payload: dict) -> list[tuple]:
     if kind == "report":
         r = _short(payload["report"])
         return [(j, wa.line(r), "report", r["id"], None) for j in relay_targets(conn)]

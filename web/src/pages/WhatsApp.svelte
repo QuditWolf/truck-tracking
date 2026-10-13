@@ -125,7 +125,10 @@
     <section class="card">
       <div class="card-h"><h3>Behaviour</h3></div>
       <div class="card-b">
-        <Toggle checked={on('relay_fleet')} label="Relay web reports to the fleet group" onchange={bool('relay_fleet', 'Relaying to fleet', 'Not relaying to fleet')} />
+        <Toggle checked={on('send_fleet')} label="Post in the fleet group"
+          hint={on('send_fleet') ? 'Off = the fleet group is never written to; everything goes to control. Reading still works.' : 'Nothing is posted in the fleet group. Relays, confirmations, edits and summaries go to control only.'}
+          onchange={bool('send_fleet', 'Posting in fleet group', 'Fleet group silenced')} />
+        <Toggle checked={on('relay_fleet')} disabled={!on('send_fleet')} label="Relay web reports to the fleet group" onchange={bool('relay_fleet', 'Relaying to fleet', 'Not relaying to fleet')} />
         <Toggle checked={on('relay_control')} label="Relay web reports to the control group" onchange={bool('relay_control', 'Relaying to control', 'Not relaying to control')} />
         <Toggle checked={on('read_fleet')} label="Read the fleet group" hint="Typed messages like “A,B LS KN4” become reports; unclear ones get a short question."
           onchange={bool('read_fleet', 'Reading fleet group', 'Ignoring fleet group')} />
@@ -134,7 +137,7 @@
         <div class="modes">
           {#each [['silent', 'Silent fleet group', 'Fleet group only gets relayed reports. Confirmations, questions and summaries go to control.'],
                   ['full', 'Full', 'Confirmations reply in the fleet group; summaries are posted there too.']] as [v, t, d]}
-            <button class="mode" class:on={settings.fleet_mode === v} onclick={() => set('fleet_mode', v, `${t} mode`)}>
+            <button class="mode" class:on={settings.fleet_mode === v} disabled={!on('send_fleet')} onclick={() => set('fleet_mode', v, `${t} mode`)}>
               <b>{t}</b><span>{d}</span>
             </button>
           {/each}
@@ -214,6 +217,7 @@
   .mode b { font-size: 13.5px; }
   .mode span { font-size: 12px; color: var(--mute); }
   .mode.on { box-shadow: inset 0 0 0 1.5px var(--ink); background: var(--surface); }
+  .mode:disabled { opacity: .45; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
   .fail { margin: 0 16px 8px; }

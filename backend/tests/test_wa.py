@@ -220,3 +220,23 @@ def test_parse_strict():
     assert parse("A LS", Reg(), sent, default_site="KN4").site == "KN4"
     assert not parse("A LS KN4 extra", Reg(), sent).ok
     assert f"{parse('A LS KN4 23:50', Reg(), sent).time:%d %H:%M}" == "12 23:50"  # future time → yesterday
+
+
+def test_fleet_posting_switch_silences_fleet_group_entirely(client, wa):
+    wa.boss.put("/api/admin/settings", json={"fleet_mode": "full"})
+    wa.boss.post("/api/shifts/start", json={"site": "SOC"})
+    r = wa.boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"}).json()
+    drain(client)
+    assert wa.texts(FLEET)  # posting on: relay + notices reach fleet
+    n = len(wa.texts(FLEET))
+
+    wa.boss.put("/api/admin/settings", json={"send_fleet": "0"})
+    wa.boss.patch(f"/api/reports/{r['id']}", json={"verb": "LO"})  # original lives in fleet
+    wa.boss.post("/api/reports", json={"trucks": ["B"], "verb": "LS", "site": "SOC"})
+    inbound(client, FLEET, "C LS SOC", "M9")  # full mode would reply in fleet
+    drain(client)
+    assert len(wa.texts(FLEET)) == n  # nothing new in fleet
+    control = wa.texts(CONTROL)
+    assert any("~LS~ LO" in t for t in control) and any(t.startswith("B LS SOC") for t in control)
+    assert any(t.startswith("C LS SOC") for t in control)  # ack fell back to control
+    assert inbound(client, FLEET, "D LS SOC", "M10") == "event"  # still reads the fleet group

@@ -54,7 +54,7 @@ def _quote(msg: dict) -> dict:
 
 def _reply(conn, msg: dict, text: str, as_: str, report_id=None) -> None:
     """Answer a fleet message: in full mode as a reply in the fleet group, otherwise in control."""
-    full = setting(conn, "fleet_mode") == "full"
+    full = setting(conn, "fleet_mode") == "full" and flag(conn, "send_fleet")
     if full:
         enqueue(conn, "notice", {"text": text, "as": as_, "report_id": report_id,
                                  "jids": [msg["jid"]], "quote": _quote(msg)})
