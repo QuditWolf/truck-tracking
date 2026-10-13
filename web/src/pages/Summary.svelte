@@ -8,7 +8,7 @@
 
   let mode = $state('shift')
   let shifts = $state([])
-  let shiftId = $state('')
+  let shiftId = $state('') // '' = current (open, else latest)
   let day = $state(todayIST())
   let from = $state(todayIST().slice(0, 8) + '01')
   let to = $state(todayIST())
@@ -23,6 +23,12 @@
       : `/api/summary/range?start=${from}&end=${to}`
     api.get(url).then((d) => (data = d))
   })
+
+  // shifts come newest first; "current" = open shift, else the latest
+  const curIdx = $derived(Math.max(0, shifts.findIndex((s) => !s.ended_at)))
+  const prevId = $derived(shifts[curIdx + 1]?.id ?? null)
+  const earlier = $derived(shifts.filter((_, i) => i !== curIdx && shifts[i].id !== prevId))
+  const pick = $derived(shiftId === '' ? 'current' : +shiftId === prevId ? 'previous' : 'other')
 
   const c = $derived(data?.counts)
   const sites = $derived.by(() => {
@@ -71,10 +77,17 @@
       {/each}
     </div>
     {#if mode === 'shift'}
-      <select class="select sm pick" bind:value={shiftId}>
-        <option value="">Current / latest shift</option>
-        {#each shifts as s}<option value={s.id}>{dateTime(s.started_at)} → {s.ended_at ? dateTime(s.ended_at) : 'running'}</option>{/each}
-      </select>
+      <div class="seg">
+        <button class:on={pick === 'current'} onclick={() => (shiftId = '')}>Current</button>
+        <button class:on={pick === 'previous'} disabled={!prevId} onclick={() => (shiftId = String(prevId))}>Previous</button>
+      </div>
+      {#if earlier.length}
+        <select class="select sm pick" class:on={pick === 'other'} value={pick === 'other' ? shiftId : ''}
+                onchange={(e) => (shiftId = e.target.value || '')}>
+          <option value="">Earlier…</option>
+          {#each earlier as s}<option value={String(s.id)}>{dateTime(s.started_at)} → {s.ended_at ? dateTime(s.ended_at) : 'running'}</option>{/each}
+        </select>
+      {/if}
     {:else if mode === 'day'}
       <input class="input sm pick" type="date" bind:value={day} />
     {:else}
@@ -193,6 +206,8 @@
   .summary { display: flex; flex-direction: column; gap: 18px; padding-bottom: 36px; }
   .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .pick { width: auto; min-width: 150px; }
+  select.pick.on { border-color: var(--ink); }
+  .seg button:disabled { opacity: .4; }
   .small { font-size: 12.5px; }
   .strong { font-weight: 650; }
 
