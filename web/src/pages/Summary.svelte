@@ -38,8 +38,28 @@
   const SLOTS = [['ENTER', 'In'], ['LS', 'LS'], ['LO', 'LO'], ['LEFT', 'Out'], ['ENTER@U', 'In'], ['US', 'US'], ['UO', 'UO'], ['LEFT@U', 'Out']]
 
   async function copy() {
-    await navigator.clipboard.writeText(data.text)
+    try {
+      await navigator.clipboard.writeText(data.text)
+    } catch {
+      // in-app browsers / non-secure contexts: fall back to a hidden textarea
+      const ta = Object.assign(document.createElement('textarea'), { value: data.text })
+      ta.style.cssText = 'position:fixed;opacity:0'
+      document.body.append(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      ta.remove()
+      if (!ok) return toast('Copy blocked — long-press the text to copy', 'warn')
+    }
     toast('Summary copied')
+  }
+
+  // Phone: native share sheet (WhatsApp, groups...). Desktop: WhatsApp with the text prefilled.
+  async function share() {
+    if (navigator.share) {
+      try { await navigator.share({ text: data.text }) } catch { /* dismissed */ }
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(data.text)}`, '_blank', 'noopener')
+    }
   }
 </script>
 
@@ -63,7 +83,10 @@
       <input class="input sm pick" type="date" bind:value={to} />
     {/if}
     <span class="grow"></span>
-    {#if data?.text}<button class="btn quiet sm" onclick={copy}><Icon name="copy" size={15} />Copy for WhatsApp</button>{/if}
+    {#if data?.text}
+      <button class="btn quiet sm" onclick={copy}><Icon name="copy" size={15} />Copy</button>
+      <button class="btn signal sm" onclick={share}><Icon name="send" size={15} />Share to WhatsApp</button>
+    {/if}
   </div>
 
   {#if c}
@@ -197,6 +220,7 @@
   .bar.u { background: var(--signal); }
   @keyframes grow { from { transform: scaleX(0); } }
 
+  .wa pre { user-select: all; -webkit-user-select: all; }
   .wa pre {
     margin: 0; padding: 14px 16px; border-radius: var(--r); background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair-2);
     font-size: 12.5px; line-height: 1.65; white-space: pre-wrap; color: var(--ink-2);
