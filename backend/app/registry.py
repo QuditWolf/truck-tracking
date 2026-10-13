@@ -13,6 +13,8 @@ class Item:
     code: str
     label: str
     site_type: Optional[str]
+    plate: str
+    notes: str
     merged_into: Optional[int]
     active: bool
     sort: int
@@ -24,7 +26,7 @@ class Registry:
     def __init__(self, conn):
         rows = conn.execute("SELECT * FROM registry").fetchall()
         self.by_id = {r["id"]: Item(r["id"], r["kind"], r["code"], r["label"], r["site_type"],
-                                    r["merged_into"], bool(r["active"]), r["sort"]) for r in rows}
+                                    r["plate"], r["notes"], r["merged_into"], bool(r["active"]), r["sort"]) for r in rows}
 
     def canon(self, id_: Optional[int]) -> Optional[Item]:
         item = self.by_id.get(id_)
@@ -47,19 +49,22 @@ class Registry:
         items = [i for i in self.by_id.values() if i.kind == kind and i.active and not i.merged_into]
         items.sort(key=lambda i: (i.sort, i.code))
         return [{"id": i.id, "code": i.code, "label": i.label, "site_type": i.site_type,
+                 "plate": i.plate, "notes": i.notes,
                  "aliases": sorted(a.code for a in self.by_id.values() if a.merged_into == i.id and a.active)}
                 for i in items]
 
 
-def create(conn, kind: str, code: str, label: str = "", site_type=None, user_id=None, sort=0) -> int:
+def create(conn, kind: str, code: str, label: str = "", site_type=None, user_id=None, sort=0,
+           plate: str = "", notes: str = "") -> int:
     code = code.strip()
     cur = conn.execute(
-        "INSERT INTO registry (kind, code, label, site_type, created_by, created_at, sort) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (kind, code, (label or code).strip(), site_type, user_id, stamp(), sort),
+        "INSERT INTO registry (kind, code, label, site_type, plate, notes, created_by, created_at, sort) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (kind, code, (label or code).strip(), site_type, plate.strip(), notes.strip(), user_id, stamp(), sort),
     )
     audit(conn, user_id, "create", "registry", cur.lastrowid,
-          after={"kind": kind, "code": code, "label": label or code, "site_type": site_type})
+          after={"kind": kind, "code": code, "label": label or code, "site_type": site_type,
+                 "plate": plate, "notes": notes})
     return cur.lastrowid
 
 
@@ -71,7 +76,7 @@ def resolve_or_create(conn, reg: Registry, kind: str, text: str, user_id) -> Ite
     if kind == "truck" or kind == "verb":
         text = text.strip().upper()
     new_id = create(conn, kind, text, user_id=user_id)
-    reg.by_id[new_id] = Item(new_id, kind, text, text, None, None, True, 0)
+    reg.by_id[new_id] = Item(new_id, kind, text, text, None, "", "", None, True, 0)
     return reg.by_id[new_id]
 
 
@@ -116,7 +121,7 @@ def add_alias(conn, target_id: int, code: str, user_id) -> int:
 
 
 def edit(conn, item_id: int, user_id, **fields) -> None:
-    allowed = {k: v for k, v in fields.items() if k in ("code", "label", "site_type", "active", "sort") and v is not None}
+    allowed = {k: v for k, v in fields.items() if k in ("code", "label", "site_type", "plate", "notes", "active", "sort") and v is not None}
     row = conn.execute("SELECT * FROM registry WHERE id = ?", (item_id,)).fetchone()
     if not row:
         raise ValueError("not found")

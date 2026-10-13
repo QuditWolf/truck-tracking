@@ -133,3 +133,27 @@ def today() -> date:
 
 def to_date(s: Optional[str]) -> date:
     return to_ist(s + "T00:00:00").date() if s else today()
+
+
+def board(conn) -> dict:
+    """Every active truck's position in the open (or latest) shift, with its last reported event."""
+    from .registry import Registry
+
+    shifts = load_shifts(conn)
+    sh = next((s for s in reversed(shifts) if s.end is None), shifts[-1] if shifts else None)
+    a = analysis(conn)
+    seg = a.segment(sh.id) if sh else None
+    out = []
+    for t in Registry(conn).listing("truck"):
+        ts = seg.trips.get(t["code"], []) if seg else []
+        last_trip = ts[-1] if ts else None
+        if last_trip:
+            k = last_trip.last
+            e = last_trip.slots[k]
+            pos = trips.POSITION[k] if not last_trip.closed else "done"
+            last = {"verb": e.verb, "site": e.site, "time": e.time.isoformat(), "user": e.user}
+        else:
+            pos, last = "idle", None
+        out.append({"truck": t["code"], "position": pos, "last": last,
+                    "trips": len(ts), "loads": sum(1 for x in ts if x.loaded)})
+    return {"shift": shift_label(sh, shifts) if sh else None, "open": bool(sh and sh.end is None), "trucks": out}

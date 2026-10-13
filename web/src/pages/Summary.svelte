@@ -1,18 +1,22 @@
 <script>
+  import Icon from '../lib/Icon.svelte'
+  import Stat from '../lib/Stat.svelte'
   import { api, dateTime, todayIST } from '../lib/api.js'
+  import { toast } from '../lib/stores.svelte.js'
+
+  let { tick } = $props()
 
   let mode = $state('shift')
   let shifts = $state([])
   let shiftId = $state('')
   let day = $state(todayIST())
-  let from = $state(todayIST())
+  let from = $state(todayIST().slice(0, 8) + '01')
   let to = $state(todayIST())
   let data = $state(null)
-  let copied = $state(false)
 
-  api.get('/api/shifts').then((s) => (shifts = s))
-
+  $effect(() => { tick; api.get('/api/shifts?limit=100').then((s) => (shifts = s)) })
   $effect(() => {
+    tick
     const url =
       mode === 'shift' ? `/api/summary/shift${shiftId ? `?shift_id=${shiftId}` : ''}`
       : mode === 'day' ? `/api/summary/range?start=${day}`
@@ -21,95 +25,200 @@
   })
 
   const c = $derived(data?.counts)
-  const sites = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
-  const fmtMin = (m) => (m == null ? '–' : m >= 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}` : `${m}m`)
+  const sites = $derived.by(() => {
+    if (!c) return []
+    const names = new Set([...Object.keys(c.loaded_by_site || {}), ...Object.keys(c.unloaded_by_site || {})])
+    const rows = [...names].map((s) => ({ s, l: c.loaded_by_site?.[s] || 0, u: c.unloaded_by_site?.[s] || 0 }))
+    return rows.sort((a, b) => b.l + b.u - (a.l + a.u))
+  })
+  const maxSite = $derived(Math.max(1, ...sites.map((r) => Math.max(r.l, r.u))))
+  const trucks = $derived(c ? Object.entries(c.per_truck) : [])
+  const fmt = (m) => (m == null ? '—' : m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`)
+
+  const SLOTS = [['ENTER', 'In'], ['LS', 'LS'], ['LO', 'LO'], ['LEFT', 'Out'], ['ENTER@U', 'In'], ['US', 'US'], ['UO', 'UO'], ['LEFT@U', 'Out']]
 
   async function copy() {
     await navigator.clipboard.writeText(data.text)
-    copied = true
-    setTimeout(() => (copied = false), 1500)
+    toast('Summary copied')
   }
 </script>
 
-<div class="seg">
-  {#each [['shift', 'Shift'], ['day', 'Day'], ['range', 'Season']] as [k, label]}
-    <button class:on={mode === k} onclick={() => (mode = k)}>{label}</button>
-  {/each}
+<div class="summary">
+  <div class="toolbar">
+    <div class="seg">
+      {#each [['shift', 'Shift'], ['day', 'Day'], ['range', 'Season']] as [k, label]}
+        <button class:on={mode === k} onclick={() => (mode = k)}>{label}</button>
+      {/each}
+    </div>
+    {#if mode === 'shift'}
+      <select class="select sm pick" bind:value={shiftId}>
+        <option value="">Current / latest shift</option>
+        {#each shifts as s}<option value={s.id}>{dateTime(s.started_at)} → {s.ended_at ? dateTime(s.ended_at) : 'running'}</option>{/each}
+      </select>
+    {:else if mode === 'day'}
+      <input class="input sm pick" type="date" bind:value={day} />
+    {:else}
+      <input class="input sm pick" type="date" bind:value={from} />
+      <span class="mute">to</span>
+      <input class="input sm pick" type="date" bind:value={to} />
+    {/if}
+    <span class="grow"></span>
+    {#if data?.text}<button class="btn quiet sm" onclick={copy}><Icon name="copy" size={15} />Copy for WhatsApp</button>{/if}
+  </div>
+
+  {#if c}
+    <div class="stats stagger">
+      <Stat label="Loaded" value={c.loaded} sub={c.loaded_inf ? `${c.loaded_inf} inferred` : 'all reported'} accent />
+      <Stat label="Reached" value={c.reached} sub="at unloading" />
+      <Stat label="Unloaded" value={c.unloaded} sub={c.unloaded_inf ? `${c.unloaded_inf} inferred` : 'all reported'} />
+      <Stat label="Flags" value={c.flags} sub={c.flags ? 'check reports' : 'clean'} warn={c.flags > 0} />
+    </div>
+
+    <div class="grid">
+      <section class="card sites">
+        <div class="card-h"><h3>By site</h3><span class="legend"><i class="l"></i>Loaded <i class="u"></i>Unloaded</span></div>
+        <div class="card-b">
+          {#each sites as r (r.s)}
+            <div class="bar-row">
+              <span class="mono name">{r.s}</span>
+              <div class="bars">
+                {#if r.l}<div class="bar l" style:--w="{(r.l / maxSite) * 100}%"><span>{r.l}</span></div>{/if}
+                {#if r.u}<div class="bar u" style:--w="{(r.u / maxSite) * 100}%"><span>{r.u}</span></div>{/if}
+              </div>
+            </div>
+          {:else}
+            <p class="mute">No loads yet.</p>
+          {/each}
+        </div>
+      </section>
+
+      <section class="card wa">
+        <div class="card-h"><h3>{data.title}</h3>{#if data.open}<span class="pill live">Live</span>{/if}</div>
+        <div class="card-b"><pre class="mono">{data.text}</pre></div>
+      </section>
+
+      <section class="card wide">
+        <div class="card-h"><h3>Trucks</h3><span class="mute small">Average minutes from reported events</span></div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Truck</th><th class="num">Trips</th><th class="num">Loads</th><th class="num">Unloads</th>
+              {#if data.durations}<th class="num">Loading</th><th class="num">Haul</th><th class="num">Unloading</th><th class="num">Cycle</th>{/if}</tr></thead>
+            <tbody>
+              {#each trucks as [t, p] (t)}
+                {@const d = data.durations?.per_truck[t]}
+                <tr><td class="mono strong">{t}</td><td class="num">{p.trips}</td><td class="num">{p.loads}</td><td class="num">{p.unloads}</td>
+                  {#if data.durations}<td class="num">{fmt(d?.loading)}</td><td class="num">{fmt(d?.haul)}</td><td class="num">{fmt(d?.unloading)}</td><td class="num">{fmt(d?.cycle)}</td>{/if}</tr>
+              {/each}
+            </tbody>
+            {#if data.durations}
+              {@const o = data.durations.overall}
+              <tfoot><tr><td>Average</td><td></td><td></td><td></td><td class="num">{fmt(o.loading)}</td><td class="num">{fmt(o.haul)}</td><td class="num">{fmt(o.unloading)}</td><td class="num">{fmt(o.cycle)}</td></tr></tfoot>
+            {/if}
+          </table>
+        </div>
+      </section>
+
+      {#if data.trips && Object.keys(data.trips).length}
+        <section class="card wide">
+          <div class="card-h"><h3>Trips</h3>
+            <span class="legend"><i class="rep"></i>Reported <i class="gap"></i>Not reported <i class="dup"></i>Has duplicates</span></div>
+          <div class="card-b trips">
+            {#each Object.entries(data.trips) as [truck, ts] (truck)}
+              <div class="trip-row">
+                <span class="mono strong">{truck}</span>
+                <div class="trip-list">
+                  {#each ts as t}
+                    <div class="trip" class:carry={t.carry_in} class:dup={t.duplicates}
+                         title="{t.load_site || '?'} → {t.unload_site || '?'}{t.loaded === 'inf' ? ' · load inferred' : ''}{t.unloaded === 'inf' ? ' · unload inferred' : ''}">
+                      {#each SLOTS as [k, lab]}
+                        <span class="slot" class:on={t.slots[k]}>{t.slots[k] ? t.slots[k] : lab}</span>
+                      {/each}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if c.notes?.length || data.flags?.length}
+        <section class="card wide">
+          <div class="card-h"><h3>What was inferred, and why</h3></div>
+          <div class="card-b notes">
+            {#each c.notes || [] as n}<p class="notice info">{n}</p>{/each}
+            {#each data.flags || [] as f}<p class="notice"><Icon name="warn" size={14} />{f}</p>{/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if data.per_shift?.length}
+        <section class="card wide">
+          <div class="card-h"><h3>Shifts</h3></div>
+          <table class="table">
+            <tbody>{#each data.per_shift as s}<tr><td>{s.title}</td><td class="num">{s.loaded} loaded</td><td class="num">{s.unloaded} unloaded</td></tr>{/each}</tbody>
+          </table>
+        </section>
+      {/if}
+    </div>
+  {:else if data}
+    <div class="empty-state"><Icon name="summary" size={22} /><p>{data.text || 'Nothing to summarise yet.'}</p></div>
+  {/if}
 </div>
 
-{#if mode === 'shift'}
-  <select bind:value={shiftId}>
-    <option value="">Current / latest</option>
-    {#each shifts as s}<option value={s.id}>{dateTime(s.started_at)} – {s.ended_at ? dateTime(s.ended_at) : 'open'}</option>{/each}
-  </select>
-{:else if mode === 'day'}
-  <input type="date" bind:value={day} />
-{:else}
-  <div class="row"><input type="date" bind:value={from} /><input type="date" bind:value={to} /></div>
-{/if}
+<style>
+  .summary { display: flex; flex-direction: column; gap: 18px; padding-bottom: 36px; }
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .pick { width: auto; min-width: 150px; }
+  .small { font-size: 12.5px; }
+  .strong { font-weight: 650; }
 
-{#if data?.text}
-  <pre class="wa">{data.text}</pre>
-  <button class="small ghost" onclick={copy}>{copied ? 'Copied' : 'Copy text'}</button>
-{/if}
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; }
+  .wide { grid-column: 1 / -1; }
 
-{#if c}
-  <div class="cards">
-    <div><b>{c.loaded}</b><span>Loaded{c.loaded_inf ? ` (${c.loaded_inf} inf)` : ''}</span></div>
-    <div><b>{c.reached}</b><span>Reached</span></div>
-    <div><b>{c.unloaded}</b><span>Unloaded{c.unloaded_inf ? ` (${c.unloaded_inf} inf)` : ''}</span></div>
-    <div><b>{c.flags}</b><span>Flags</span></div>
-  </div>
+  .legend { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mute); flex-wrap: wrap; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-left: 6px; }
+  .legend .l { background: var(--ink); }
+  .legend .u { background: var(--signal); }
+  .legend .rep { background: var(--ink); }
+  .legend .gap { background: transparent; box-shadow: inset 0 0 0 1px var(--hair); }
+  .legend .dup { background: var(--amber-soft); box-shadow: inset 0 0 0 1px var(--amber); }
 
-  <div class="two">
-    <table><caption>Loaded by site</caption><tbody>{#each sites(c.loaded_by_site) as [s, n]}<tr><td>{s}</td><td>{n}</td></tr>{/each}</tbody></table>
-    <table><caption>Unloaded by site</caption><tbody>{#each sites(c.unloaded_by_site) as [s, n]}<tr><td>{s}</td><td>{n}</td></tr>{/each}</tbody></table>
-  </div>
+  .bar-row { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: center; padding: 6px 0; }
+  .name { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bars { display: flex; flex-direction: column; gap: 3px; }
+  .bar {
+    height: 16px; width: var(--w); min-width: 26px; border-radius: 4px; display: flex; align-items: center; justify-content: flex-end;
+    padding-right: 6px; transform-origin: left; animation: grow .7s var(--ease) both;
+  }
+  .bar span { font: 600 10.5px/1 var(--mono); color: #fff; }
+  .bar.l { background: var(--ink); }
+  .bar.u { background: var(--signal); }
+  @keyframes grow { from { transform: scaleX(0); } }
 
-  <div class="scroll"><table>
-    <caption>Per truck</caption><tbody>
-    <tr><th>Truck</th><th>Trips</th><th>Loads</th><th>Unloads</th>{#if data.durations}<th>Load</th><th>Haul</th><th>Unload</th><th>Cycle</th>{/if}</tr>
-    {#each Object.entries(c.per_truck) as [t, p]}
-      {@const d = data.durations?.per_truck[t]}
-      <tr><td>{t}</td><td>{p.trips}</td><td>{p.loads}</td><td>{p.unloads}</td>
-        {#if d}<td>{fmtMin(d.loading)}</td><td>{fmtMin(d.haul)}</td><td>{fmtMin(d.unloading)}</td><td>{fmtMin(d.cycle)}</td>{/if}</tr>
-    {/each}
-    {#if data.durations}
-      {@const o = data.durations.overall}
-      <tr class="total"><td>Avg</td><td></td><td></td><td></td><td>{fmtMin(o.loading)}</td><td>{fmtMin(o.haul)}</td><td>{fmtMin(o.unloading)}</td><td>{fmtMin(o.cycle)}</td></tr>
-    {/if}
-  </tbody></table></div>
+  .wa pre {
+    margin: 0; padding: 14px 16px; border-radius: var(--r); background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair-2);
+    font-size: 12.5px; line-height: 1.65; white-space: pre-wrap; color: var(--ink-2);
+  }
 
-  {#if c.notes?.length}
-    <h3>Inferred</h3>
-    <ul class="plain">{#each c.notes as n}<li>{n}</li>{/each}</ul>
-  {/if}
-  {#if data.flags?.length}
-    <h3>Flags</h3>
-    <ul class="plain warnlist">{#each data.flags as f}<li>{f}</li>{/each}</ul>
-  {/if}
+  .trips { display: flex; flex-direction: column; gap: 10px; }
+  .trip-row { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; }
+  .trip-row > .mono { padding-top: 5px; }
+  .trip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .trip { display: grid; grid-template-columns: repeat(8, auto); gap: 2px; padding: 3px; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair-2); }
+  .trip.carry { box-shadow: inset 0 0 0 1px var(--hair); background: repeating-linear-gradient(-45deg, var(--paper), var(--paper) 4px, var(--paper-2) 4px, var(--paper-2) 8px); }
+  .trip.dup { box-shadow: inset 0 0 0 1px var(--amber); }
+  .slot {
+    font: 500 9.5px/1 var(--mono); padding: 5px 5px; border-radius: 5px; color: var(--mute); min-width: 30px; text-align: center;
+    box-shadow: inset 0 0 0 1px var(--hair-2);
+  }
+  .slot.on { background: var(--ink); color: var(--paper); box-shadow: none; font-weight: 600; }
 
-  {#if data.trips}
-    <h3>Trips</h3>
-    {#each Object.entries(data.trips) as [truck, ts]}
-      <div class="trips">
-        <b>{truck}</b>
-        {#each ts as t}
-          <span class="trip" class:carry={t.carry_in}>
-            {#each Object.entries(t.slots) as [k, v]}<i>{k} {v}</i>{/each}
-            {#if t.loaded === 'inf'}<em>load inf</em>{/if}
-            {#if t.unloaded === 'inf'}<em>unload inf</em>{/if}
-            {#if t.duplicates}<em>{t.duplicates} dup</em>{/if}
-          </span>
-        {/each}
-      </div>
-    {/each}
-  {/if}
+  .notes { display: flex; flex-direction: column; gap: 6px; }
 
-  {#if data.per_shift}
-    <table>
-      <caption>Shifts</caption><tbody>
-      {#each data.per_shift as s}<tr><td>{s.title}</td><td>{s.loaded} loaded</td><td>{s.unloaded} unloaded</td></tr>{/each}
-    </tbody></table>
-  {/if}
-{/if}
+  @media (max-width: 1000px) {
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>

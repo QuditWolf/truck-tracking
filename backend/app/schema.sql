@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS registry (
     code        TEXT NOT NULL,
     label       TEXT NOT NULL,
     site_type   TEXT CHECK (site_type IN ('loading', 'unloading', 'depot')),
+    plate       TEXT NOT NULL DEFAULT '',   -- trucks: licence / registration number
+    notes       TEXT NOT NULL DEFAULT '',   -- free remarks (driver, owner, capacity...)
     merged_into INTEGER REFERENCES registry(id),
     active      INTEGER NOT NULL DEFAULT 1,
     sort        INTEGER NOT NULL DEFAULT 0,

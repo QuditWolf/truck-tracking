@@ -1,34 +1,38 @@
 <script>
-  import Chips from './Chips.svelte'
   import { untrack } from 'svelte'
-  import { api, localInput, line } from './api.js'
+  import { slide } from 'svelte/transition'
+  import Icon from './Icon.svelte'
+  import Modal from './Modal.svelte'
+  import Picker from './Picker.svelte'
+  import { api, localInput, time } from './api.js'
 
-  // report = existing report when editing, null for a new one
-  let { registry, report = null, onDone = () => {} } = $props()
+  // report = existing report when editing; null composes a new one
+  let { registry, report = null, me = null, onDone = () => {} } = $props()
 
-  // Form is seeded once from props; the parent re-mounts it ({#key}) when the shift changes.
+  // Seeded once from props; the parent re-mounts ({#key}) when the shift changes.
   const r0 = untrack(() => report)
-  const shiftSite = untrack(() => registry.shift?.default_site || '')
+  const shift = untrack(() => registry.shift)
   let trucks = $state(r0 ? [...r0.trucks] : [])
   let verb = $state(r0?.verb || '')
-  let site = $state(r0 ? r0.site || '' : shiftSite)
+  let site = $state(r0 ? r0.site || '' : shift?.default_site || '')
   let remarks = $state(r0?.remarks || '')
-  let advanced = $state(!!r0)
+  let advanced = $state(false)
   let when = $state(r0 ? localInput(r0.event_time) : '')
+  const initialWhen = untrack(() => when)
+
   let warnings = $state([])
   let newEntries = $state([])
   let busy = $state(false)
   let error = $state('')
+  let askShift = $state(false)
 
-  // Editing: only send a time if the user actually changed it (keeps the original otherwise).
-  const initialWhen = when
   const draft = $derived({
     trucks, verb, site: site || null, remarks,
-    event_time: advanced && when && when !== initialWhen ? when : r0 ? r0.event_time : null,
+    event_time: when && when !== initialWhen ? when : r0 ? r0.event_time : null,
   })
-  const ready = $derived(trucks.length > 0 && verb)
+  const ready = $derived(trucks.length > 0 && !!verb)
+  const shownTime = $derived(draft.event_time ? time(draft.event_time) : time(new Date().toISOString()))
 
-  // Live check against everything already reported (duplicates, gaps, unshifted).
   let timer
   $effect(() => {
     const d = draft
@@ -36,21 +40,28 @@
     if (!ready) { warnings = []; newEntries = []; return }
     timer = setTimeout(async () => {
       try {
-        const q = report ? `?report_id=${report.id}` : ''
-        const r = await api.post(`/api/reports/check${q}`, d)
-        warnings = r.warnings
+        const r = await api.post(`/api/reports/check${r0 ? `?report_id=${r0.id}` : ''}`, d)
+        // with no shift running the confirm dialog covers this
+        warnings = r.warnings.filter((w) => !(w === 'outside any shift' && !r0 && !shift))
         newEntries = r.new_entries
-      } catch { /* check is advisory */ }
-    }, 250)
+      } catch { /* advisory only */ }
+    }, 220)
   })
 
-  async function submit() {
+  function submit() {
+    if (!r0 && !shift) askShift = true
+    else send(false)
+  }
+
+  async function send(startShift) {
+    askShift = false
     busy = true
     error = ''
     try {
-      const r = report ? await api.patch(`/api/reports/${report.id}`, draft) : await api.post('/api/reports', draft)
-      if (!report) { trucks = []; remarks = ''; advanced = false; when = '' }
-      onDone(r)
+      const body = { ...draft, ...(startShift ? { start_shift: true } : {}) }
+      const r = r0 ? await api.patch(`/api/reports/${r0.id}`, body) : await api.post('/api/reports', body)
+      if (!r0) { trucks = []; remarks = ''; when = ''; advanced = false }
+      onDone(r, startShift)
     } catch (e) {
       error = e.message
     } finally {
@@ -59,32 +70,96 @@
   }
 </script>
 
-<form class="report" onsubmit={(e) => { e.preventDefault(); submit() }}>
-  <Chips title="Truck" options={registry.truck} bind:value={trucks} multi placeholder="Truck" />
-  <Chips title="Event" options={registry.verb} bind:value={verb} placeholder="Event" />
-  <Chips title="Site" options={registry.site} bind:value={site} placeholder="Site" />
+<form class="composer" class:editing={!!r0} onsubmit={(e) => { e.preventDefault(); submit() }}>
+  <div class="fields">
+    <Picker label="Truck" options={registry.truck} bind:value={trucks} multi />
+    <Picker label="Event" options={registry.verb} bind:value={verb} variant="labelled" />
+    <Picker label="Site" options={registry.site} bind:value={site} variant="labelled" />
 
-  <input class="remarks" bind:value={remarks} placeholder="Remarks (optional)" maxlength="200" />
+    <div class="extras">
+      <input class="input" bind:value={remarks} placeholder="Remarks — optional" maxlength="200" />
+      {#if !advanced && !r0}
+        <button type="button" class="btn quiet when" title="Set a different event time"
+                onclick={() => { advanced = true; when = when || localInput() }}>
+          <Icon name="clock" size={16} /> Now
+        </button>
+      {/if}
+    </div>
+    {#if advanced || r0}
+      <div class="when-row" transition:slide={{ duration: 180 }}>
+        <label class="field grow">
+          <span>Event time · IST</span>
+          <input class="input" type="datetime-local" bind:value={when} max={localInput()} />
+        </label>
+        {#if !r0}
+          <button type="button" class="btn ghost" onclick={() => { advanced = false; when = '' }}>Use now</button>
+        {/if}
+      </div>
+    {/if}
+  </div>
 
-  <details bind:open={advanced}>
-    <summary>Advanced</summary>
-    <label>Event time (IST)
-      <input type="datetime-local" bind:value={when} max={localInput()} />
-    </label>
-    {#if !when}<p class="hint">Empty = now</p>{/if}
-  </details>
-
-  {#if ready}
-    <p class="preview">{line({ ...draft, event_time: draft.event_time || new Date().toISOString() })}</p>
-  {/if}
-  {#each newEntries as n}<p class="note">{n} (will be added)</p>{/each}
-  {#each warnings as w}<p class="warn">{w}</p>{/each}
-  {#if error}<p class="error">{error}</p>{/if}
-
-  <div class="actions">
-    {#if report}<button type="button" class="ghost" onclick={() => onDone(null)}>Cancel</button>{/if}
-    <button class="send" class:caution={warnings.length} disabled={!ready || busy}>
-      {busy ? 'Sending…' : warnings.length ? (report ? 'Save anyway' : 'Send anyway') : report ? 'Save' : 'Send'}
-    </button>
+  <div class="dock">
+    <div class="ticket" class:ready>
+      {#if ready}
+        <span>{trucks.join(',')}</span>
+        <span class="t-verb">{verb}</span>
+        {#if site}<span>{site}</span>{/if}
+        <span class="t-dim">{shownTime}</span>
+        {#if me}<span class="t-user">{me.name}</span>{/if}
+      {:else}
+        <span class="t-hint">Pick a truck and an event</span>
+      {/if}
+    </div>
+    {#each newEntries as n (n)}<p class="notice info" transition:slide={{ duration: 160 }}>{n} — will be added to the list</p>{/each}
+    {#each warnings as w (w)}<p class="notice" transition:slide={{ duration: 160 }}><Icon name="warn" size={15} />{w}</p>{/each}
+    {#if error}<p class="notice err">{error}</p>{/if}
+    <div class="dock-actions">
+      {#if r0}<button type="button" class="btn quiet" onclick={() => onDone(null)}>Cancel</button>{/if}
+      <button class="btn send" class:signal={!warnings.length} class:caution={warnings.length > 0} disabled={!ready || busy}>
+        {busy ? 'Sending…' : warnings.length ? (r0 ? 'Save anyway' : 'Send anyway') : r0 ? 'Save changes' : 'Send report'}
+        {#if !busy}<Icon name="send" size={18} />{/if}
+      </button>
+    </div>
   </div>
 </form>
+
+<Modal bind:open={askShift} title="No shift is running">
+  <p>Start a shift with this report so it's counted in the summaries?</p>
+  <p class="mute">Shift starts {draft.event_time ? `at ${time(draft.event_time)}` : 'now'}{site ? ` · default site ${site}` : ''}.</p>
+  {#snippet actions()}
+    <button class="btn ghost" onclick={() => (askShift = false)}>Cancel</button>
+    <button class="btn quiet" onclick={() => send(false)}>Send without shift</button>
+    <button class="btn signal" onclick={() => send(true)}>Start shift &amp; send</button>
+  {/snippet}
+</Modal>
+
+<style>
+  .composer { display: flex; flex-direction: column; min-height: 100%; }
+  .fields { display: flex; flex-direction: column; gap: 22px; padding-bottom: 20px; flex: 1; }
+  .extras { display: flex; gap: 8px; }
+  .extras .input { flex: 1; }
+  .when { height: 44px; }
+  .when-row { display: flex; align-items: flex-end; gap: 8px; }
+  .when-row .btn { height: 44px; }
+
+  .dock {
+    position: sticky; bottom: 0; z-index: 2; margin: 0 calc(-1 * var(--pad)); padding: 16px var(--pad) var(--pad);
+    display: flex; flex-direction: column; gap: 8px;
+    background: linear-gradient(to bottom, transparent, var(--paper) 20px);
+  }
+  .editing .dock { margin: 0; padding: 14px 0 0; background: none; position: static; }
+
+  .ticket {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 50px; padding: 10px 14px;
+    border-radius: var(--r); background: var(--surface); box-shadow: inset 0 0 0 1px var(--hair);
+    font: 600 15px/1.2 var(--mono); letter-spacing: -0.03em; transition: box-shadow .25s var(--ease);
+  }
+  .ticket.ready { box-shadow: inset 0 0 0 1.5px var(--ink), var(--shadow); }
+  .t-verb { color: var(--signal); }
+  .t-dim { color: var(--mute); font-weight: 500; }
+  .t-user { margin-left: auto; color: var(--mute); font: 500 13.5px var(--sans); }
+  .t-hint { color: var(--mute); font: 500 13.5px var(--sans); }
+
+  .dock-actions { display: flex; gap: 8px; }
+  .send { flex: 1; height: 54px; font-size: 16px; border-radius: 12px; }
+</style>

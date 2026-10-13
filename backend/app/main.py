@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     conn = core.connect()
     core.init_db(conn)
     registry.seed_verbs(conn)
-    app.state.conn = conn
+    app.state.conn = conn  # startup/maintenance only; requests get their own (auth.get_conn)
     yield
     conn.close()
 
@@ -112,6 +112,7 @@ class ReportIn(BaseModel):
     site: Optional[str] = None
     remarks: str = ""
     event_time: Optional[str] = None  # IST; default now
+    start_shift: bool = False  # no open shift: start one at the event time (user confirmed)
 
 
 class ReportPatch(BaseModel):
@@ -137,7 +138,7 @@ def check_report(body: ReportIn, report_id: Optional[int] = None, user=Depends(m
         item = reg.find(kind, val) if val else None
         if item:
             draft[kind] = item.code
-    draft["trucks"] = [(reg.find("truck", t) or registry.Item(0, "", t, t, None, None, True, 0)).code
+    draft["trucks"] = [(reg.find("truck", t) or registry.Item(0, "", t, t, None, "", "", None, True, 0)).code
                        for t in draft["trucks"]]
     a = reports.analysis(conn, reg, draft=draft, exclude_id=report_id)
     warnings = reports.flags_for(a, reports.DRAFT_ID, draft["trucks"])
@@ -150,7 +151,9 @@ def check_report(body: ReportIn, report_id: Optional[int] = None, user=Depends(m
 def create_report(body: ReportIn, user=Depends(member), conn=Depends(get_conn)):
     try:
         with core.tx(conn):
-            r = reports.create_report(conn, body.model_dump(), user["id"])
+            if body.start_shift and not reports.open_shift(conn):
+                reports.start_shift(conn, user["id"], body.site, body.event_time or core.iso(core.now()))
+            r = reports.create_report(conn, body.model_dump(exclude={"start_shift"}), user["id"])
     except ValueError as e:
         bad(e)
     return _with_flags(conn, [r])[0]
@@ -270,6 +273,11 @@ def summary_shift(shift_id: Optional[int] = None, user=Depends(member), conn=Dep
     return summary.shift_summary(conn, shift_id) or {"text": "No shifts yet."}
 
 
+@app.get("/api/board")
+def get_board(user=Depends(member), conn=Depends(get_conn)):
+    return summary.board(conn)
+
+
 @app.get("/api/summary/range")
 def summary_range(start: Optional[str] = None, end: Optional[str] = None,
                   user=Depends(member), conn=Depends(get_conn)):
@@ -284,12 +292,16 @@ class RegistryIn(BaseModel):
     code: str
     label: str = ""
     site_type: Optional[str] = None
+    plate: str = ""
+    notes: str = ""
 
 
 class RegistryPatch(BaseModel):
     code: Optional[str] = None
     label: Optional[str] = None
     site_type: Optional[str] = None
+    plate: Optional[str] = None
+    notes: Optional[str] = None
     active: Optional[bool] = None
     sort: Optional[int] = None
 
@@ -326,7 +338,8 @@ def _admin_tx(conn, fn):
 @app.post("/api/admin/registry")
 def admin_registry_create(body: RegistryIn, user=Depends(admin), conn=Depends(get_conn)):
     return {"id": _admin_tx(conn, lambda: registry.create(conn, body.kind, body.code, body.label,
-                                                           body.site_type, user["id"]))}
+                                                           body.site_type, user["id"], plate=body.plate,
+                                                           notes=body.notes))}
 
 
 @app.patch("/api/admin/registry/{item_id}")

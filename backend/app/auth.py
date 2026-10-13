@@ -45,8 +45,13 @@ def user_dict(row) -> dict:
             "disabled": bool(row["disabled"])}
 
 
-def get_conn(request: Request):
-    return request.app.state.conn
+def get_conn():
+    """One SQLite connection per request: connections must not be shared across threads."""
+    conn = core.connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def current_user(request: Request, conn=Depends(get_conn)) -> dict:

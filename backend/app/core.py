@@ -59,8 +59,18 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
+# Columns added after first deploy: (table, column, DDL). CREATE TABLE IF NOT EXISTS won't add them.
+MIGRATIONS = [
+    ("registry", "plate", "TEXT NOT NULL DEFAULT ''"),
+    ("registry", "notes", "TEXT NOT NULL DEFAULT ''"),
+]
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript((Path(__file__).parent / "schema.sql").read_text())
+    for table, col, ddl in MIGRATIONS:
+        if col not in {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
 

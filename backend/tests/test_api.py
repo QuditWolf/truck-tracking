@@ -59,6 +59,10 @@ def test_report_flow_with_relay_and_flags(client):
     assert s["counts"]["loaded"] == 2 and s["counts"]["loaded_by_site"] == {"SOC": 2}
     assert s["text"].startswith("Shift 13 Oct #1 06:00-now\nLoaded 2: SOC 2")
 
+    b = ravi.get("/api/board").json()
+    pos = {t["truck"]: t["position"] for t in b["trucks"]}
+    assert pos == {"A": "loaded", "B": "loaded", "C": "idle", "D": "idle"}
+
     assert boss.delete(f"/api/reports/{r['id']}").status_code == 200
     assert ravi.get("/api/reports").json() == []
     assert ravi.get("/api/summary/shift").json()["counts"]["loaded"] == 0
@@ -134,3 +138,49 @@ def test_seed_sites_idempotent(client):
     assert len(sites) == 14 and sites["SKP"]["aliases"] == ["SDP"] and sites["BG"]["site_type"] == "depot"
     u.post("/api/shifts/start", json={})
     assert u.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "lal jameen"}).json()["site"] == "LJ"
+
+
+def test_truck_plate_and_notes(client):
+    boss = login(client, "boss@x.org", "Boss")
+    tid = boss.post("/api/admin/registry", json={"kind": "truck", "code": "A", "plate": "HR 26 AB 1234"}).json()["id"]
+    boss.patch(f"/api/admin/registry/{tid}", json={"notes": "Driver: Raju"})
+    t = boss.get("/api/registry").json()["truck"][0]
+    assert (t["plate"], t["notes"]) == ("HR 26 AB 1234", "Driver: Raju")
+
+
+def test_migration_adds_columns_to_old_db(tmp_path):
+    import sqlite3
+    from app import core
+    old = sqlite3.connect(tmp_path / "old.db")
+    old.execute("CREATE TABLE registry (id INTEGER PRIMARY KEY, kind TEXT, code TEXT, label TEXT, site_type TEXT, "
+                "merged_into INTEGER, active INTEGER DEFAULT 1, sort INTEGER DEFAULT 0, created_by INTEGER, created_at TEXT)")
+    old.commit()
+    old.close()
+    conn = core.connect(str(tmp_path / "old.db"))
+    core.init_db(conn)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(registry)")}
+    assert {"plate", "notes"} <= cols
+
+
+def test_first_report_can_start_shift_atomically(client):
+    u = login(client, "u@x.org", "U")
+    r = u.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC",
+                                     "event_time": "2026-10-13T07:15", "start_shift": True}).json()
+    assert r["flags"] == []
+    s = u.get("/api/shifts").json()
+    assert len(s) == 1 and s[0]["started_at"] == "2026-10-13T07:15:00+05:30" and s[0]["default_site"] == "SOC"
+    # second report with start_shift is a no-op for shifts (one already open)
+    u.post("/api/reports", json={"trucks": ["B"], "verb": "LS", "site": "SOC", "start_shift": True})
+    assert len(u.get("/api/shifts").json()) == 1
+
+
+def test_parallel_requests_do_not_share_cursor(client):
+    from concurrent.futures import ThreadPoolExecutor
+    u = login(client, "u@x.org", "U")
+    u.post("/api/shifts/start", json={})
+    for t in "ABCDEFGH":
+        u.post("/api/reports", json={"trucks": [t], "verb": "LS", "site": "SOC"})
+    paths = ["/api/board", "/api/feed", "/api/shifts", "/api/reports", "/api/summary/shift", "/api/me"] * 8
+    with ThreadPoolExecutor(12) as ex:
+        codes = list(ex.map(lambda p: u.get(p).status_code, paths))
+    assert set(codes) == {200}
