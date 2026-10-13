@@ -121,8 +121,8 @@ def test_admin_only(client):
     u = login(client, "u@x.org", "U")
     assert u.get("/api/admin/users").status_code == 403
     boss = login(client, "boss@x.org", "Boss")
-    assert boss.put("/api/admin/settings", json={"fleet_mode": "full"}).json()["fleet_mode"] == "full"
-    assert boss.put("/api/admin/settings", json={"fleet_mode": "loud"}).status_code == 400
+    assert boss.put("/api/admin/settings", json={"summary_fleet": "1"}).json()["summary_fleet"] == "1"
+    assert boss.put("/api/admin/settings", json={"summary_fleet": "yes"}).status_code == 400
     uid = u.get("/api/me").json()["id"]
     boss.patch(f"/api/admin/users/{uid}", json={"disabled": True})
     assert u.get("/api/me").status_code == 401

@@ -1,9 +1,10 @@
 """Outbox → WhatsApp, plus periodic summaries and stale-shift warnings.
 
-Routing:
-    report / edit / delete   → fleet (relay_fleet) + control (relay_control)
-    shift / summary / ack    → control; also fleet in "full" mode
-Edits and deletes reply to the message that originally carried the report.
+Routing — three tiers, each switchable to fleet and/or control (Admin → WhatsApp):
+    relay    report / edit / delete
+    summary  periodic, end-of-shift, "send now"
+    notice   confirmations, questions, shift start/end, stale-shift warning
+`send_fleet` off removes the fleet group from every tier. Edits/deletes reply to the original.
 """
 
 import json
@@ -28,15 +29,12 @@ def _uniq(jids: list[str]) -> list[str]:
     return out
 
 
-def relay_targets(conn) -> list[str]:
-    return _uniq([setting(conn, "fleet_jid") if flag(conn, "relay_fleet") else "",
-                  setting(conn, "control_jid") if flag(conn, "relay_control") else ""])
+TIERS = ("relay", "summary", "notice")
 
 
-def notice_targets(conn) -> list[str]:
-    """Confirmations, summaries, shift notices: control always, fleet only in full mode."""
-    full = setting(conn, "fleet_mode") == "full"
-    return _uniq([setting(conn, "control_jid"), setting(conn, "fleet_jid") if full else ""])
+def targets(conn, tier: str) -> list[str]:
+    return _uniq([setting(conn, "fleet_jid") if flag(conn, f"{tier}_fleet") else "",
+                  setting(conn, "control_jid") if flag(conn, f"{tier}_control") else ""])
 
 
 def send(conn, jid: str, text: str, kind: str, report_id=None, quote=None) -> str | None:
@@ -83,23 +81,24 @@ def messages_for(conn, kind: str, payload: dict) -> list[tuple]:
 def _messages_for(conn, kind: str, payload: dict) -> list[tuple]:
     if kind == "report":
         r = _short(payload["report"])
-        return [(j, wa.line(r), "report", r["id"], None) for j in relay_targets(conn)]
+        return [(j, wa.line(r), "report", r["id"], None) for j in targets(conn, "relay")]
     if kind in ("edit", "delete"):
         r = _short(payload["after"] if kind == "edit" else payload["report"])
         text = wa.edit_line(_short(payload["before"]), r) if kind == "edit" else wa.delete_line(r)
-        jids = _uniq(relay_targets(conn) + [j for j in (setting(conn, "fleet_jid"), setting(conn, "control_jid"))
+        jids = _uniq(targets(conn, "relay") + [j for j in (setting(conn, "fleet_jid"), setting(conn, "control_jid"))
                                             if original(conn, r["id"], j)])
         return [(j, text, kind, r["id"], original(conn, r["id"], j)) for j in jids]
     if kind == "shift":
-        out = [(j, shift_text(conn, payload), "shift", None, None) for j in notice_targets(conn)]
+        out = [(j, shift_text(conn, payload), "shift", None, None) for j in targets(conn, "notice")]
         if payload["action"] == "end" and flag(conn, "summary_on_shift_end"):
             s = summary.shift_summary(conn, payload["shift"]["id"])
             if s:
-                out += [(j, s["text"], "summary", None, None) for j in notice_targets(conn)]
+                out += [(j, s["text"], "summary", None, None) for j in targets(conn, "summary")]
         return out
     if kind == "notice":
-        return [(j, payload["text"], payload.get("as", "ack"), payload.get("report_id"), payload.get("quote"))
-                for j in (payload["jids"] if payload.get("jids") else notice_targets(conn))]
+        as_ = payload.get("as", "ack")
+        jids = payload.get("jids") or targets(conn, "summary" if as_ == "summary" else "notice")
+        return [(j, payload["text"], as_, payload.get("report_id"), payload.get("quote")) for j in jids]
     return []
 
 
@@ -175,8 +174,7 @@ def tick(conn) -> None:
             and setting(conn, "_stale_warned") != str(sh["id"]):
         set_setting(conn, "_stale_warned", str(sh["id"]))
         core.enqueue(conn, "notice", {"text": f"? Shift open since {to_ist(sh['started_at']):%d %b %H:%M}\n"
-                                              f"! send 'shift end' if it's over",
-                                      "jids": [setting(conn, "control_jid")]})
+                                              f"! send 'shift end' if it's over"})
 
 
 def run_once(conn) -> None:

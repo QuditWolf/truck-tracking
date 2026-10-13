@@ -53,12 +53,11 @@ def _quote(msg: dict) -> dict:
 
 
 def _reply(conn, msg: dict, text: str, as_: str, report_id=None) -> None:
-    """Answer a fleet message: in full mode as a reply in the fleet group, otherwise in control."""
-    full = setting(conn, "fleet_mode") == "full" and flag(conn, "send_fleet")
-    if full:
+    """Answer a fleet message per the notice tier: a reply in the fleet group and/or a line in control."""
+    if flag(conn, "notice_fleet"):
         enqueue(conn, "notice", {"text": text, "as": as_, "report_id": report_id,
                                  "jids": [msg["jid"]], "quote": _quote(msg)})
-    else:
+    if flag(conn, "notice_control") and setting(conn, "control_jid") != msg["jid"]:
         enqueue(conn, "notice", {"text": text, "as": as_, "report_id": report_id,
                                  "jids": [setting(conn, "control_jid")]})
 

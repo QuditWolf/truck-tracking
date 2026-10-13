@@ -94,7 +94,7 @@ def test_master_switch_off_skips_everything(client, wa):
 
 
 def test_relay_toggles_and_full_mode(client, wa):
-    wa.boss.put("/api/admin/settings", json={"relay_control": "0", "fleet_mode": "full"})
+    wa.boss.put("/api/admin/settings", json={"relay_control": "0", "notice_fleet": "1", "summary_fleet": "1"})
     wa.boss.post("/api/shifts/start", json={})
     wa.boss.post("/api/reports", json={"trucks": ["C"], "verb": "LS", "site": "KN4"})
     drain(client)
@@ -228,7 +228,7 @@ def test_parse_strict():
 
 
 def test_fleet_posting_switch_silences_fleet_group_entirely(client, wa):
-    wa.boss.put("/api/admin/settings", json={"fleet_mode": "full"})
+    wa.boss.put("/api/admin/settings", json={"notice_fleet": "1", "summary_fleet": "1"})
     wa.boss.post("/api/shifts/start", json={"site": "SOC"})
     r = wa.boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"}).json()
     drain(client)
@@ -243,7 +243,7 @@ def test_fleet_posting_switch_silences_fleet_group_entirely(client, wa):
     assert len(wa.texts(FLEET)) == n  # nothing new in fleet
     control = wa.texts(CONTROL)
     assert any("~LS~ LO" in t for t in control) and any(t.startswith("B LS SOC") for t in control)
-    assert any(t.startswith("C LS SOC") for t in control)  # ack fell back to control
+    assert any(t.startswith("C LS SOC") for t in control)  # ack still reaches control
     assert inbound(client, FLEET, "D LS SOC", "M10") == "event"  # still reads the fleet group
 
 
@@ -279,3 +279,38 @@ def test_own_echo_and_redelivery_are_ignored(client, wa):
     assert inbound(client, FLEET, "A LS SOC", "M1") == "duplicate"
     assert len(wa.boss.get("/api/feed").json()) == 1
     assert len(wa.boss.get("/api/shifts").json()) == 1
+
+
+def test_three_tiers_route_independently(client, wa):
+    conn = client.app.state.conn
+    wa.boss.put("/api/admin/settings", json={"relay_fleet": "1", "relay_control": "0",
+                                             "summary_fleet": "1", "summary_control": "0",
+                                             "notice_fleet": "0", "notice_control": "1"})
+    wa.boss.post("/api/shifts/start", json={"site": "SOC"})
+    wa.boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"})
+    inbound(client, FLEET, "B LS SOC", "M1")
+    wa.boss.post("/api/admin/wa/summary")
+    drain(client)
+    fleet, control = wa.texts(FLEET), wa.texts(CONTROL)
+    assert any(t.startswith("A LS SOC") for t in fleet) and not any(t.startswith("A LS SOC") for t in control)
+    assert any("Loaded" in t for t in fleet) and not any("Loaded" in t for t in control)
+    assert any(t.startswith("Shift start") for t in control) and not any(t.startswith("Shift start") for t in fleet)
+    assert any(t.startswith("B LS SOC") for t in control) and not any(t.startswith("B LS SOC") for t in fleet)
+
+    wa.boss.put("/api/admin/settings", json={"notice_fleet": "1"})  # both: reply in fleet + line in control
+    inbound(client, FLEET, "C LS SOC", "M2")
+    drain(client)
+    assert next(q for j, t, q in wa.sent if j == FLEET and t.startswith("C LS SOC"))["id"] == "M2"
+    assert any(t.startswith("C LS SOC") for t in wa.texts(CONTROL))
+
+
+def test_old_fleet_mode_setting_is_migrated(tmp_path, monkeypatch):
+    from app import core as c
+    monkeypatch.setattr(c, "DB_PATH", str(tmp_path / "x.db"))
+    for mode, expect in (("full", "1"), ("silent", "0")):
+        conn = c.connect(str(tmp_path / f"{mode}.db"))
+        conn.executescript("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+        conn.execute("INSERT INTO settings VALUES ('fleet_mode', ?)", (mode,))
+        c.init_db(conn)
+        assert c.setting(conn, "summary_fleet") == expect and c.setting(conn, "notice_fleet") == expect
+        assert c.setting(conn, "summary_control") == "1" and c.setting(conn, "notice_control") == "1"

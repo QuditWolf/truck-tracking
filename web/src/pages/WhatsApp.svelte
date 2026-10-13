@@ -102,8 +102,8 @@
       </div>
       <div class="card-b groups">
         {#if groupsError}<p class="notice err">{groupsError}</p>{/if}
-        {#each [['fleet_jid', 'Fleet group', 'Operators post events here. Web reports are relayed here.', 'fleet'],
-                ['control_jid', 'Control group', 'Shift start/end, summaries, questions and confirmations.', 'control']] as [key, label, hint, target]}
+        {#each [['fleet_jid', 'Fleet group', 'Where operators post events.', 'fleet'],
+                ['control_jid', 'Control group', 'Where the team runs shifts and sends commands (summary, shift start/end).', 'control']] as [key, label, hint, target]}
           <div class="group">
             <div class="text"><b>{label}</b><span>{hint}</span></div>
             <div class="row">
@@ -128,20 +128,33 @@
         <Toggle checked={on('send_fleet')} label="Post in the fleet group"
           hint={on('send_fleet') ? 'Off = the fleet group is never written to; everything goes to control. Reading still works.' : 'Nothing is posted in the fleet group. Relays, confirmations, edits and summaries go to control only.'}
           onchange={bool('send_fleet', 'Posting in fleet group', 'Fleet group silenced')} />
-        <Toggle checked={on('relay_fleet')} disabled={!on('send_fleet')} label="Relay web reports to the fleet group" onchange={bool('relay_fleet', 'Relaying to fleet', 'Not relaying to fleet')} />
-        <Toggle checked={on('relay_control')} label="Relay web reports to the control group" onchange={bool('relay_control', 'Relaying to control', 'Not relaying to control')} />
         <Toggle checked={on('read_fleet')} label="Read the fleet group" hint="Typed messages like “A,B LS KN4” become reports; unclear ones get a short question."
           onchange={bool('read_fleet', 'Reading fleet group', 'Ignoring fleet group')} />
         <Toggle checked={on('summary_on_shift_end')} label="Summary when a shift ends" onchange={bool('summary_on_shift_end', 'End-of-shift summary on', 'End-of-shift summary off')} />
 
-        <div class="modes">
-          {#each [['silent', 'Silent fleet group', 'Fleet group only gets relayed reports. Confirmations, questions and summaries go to control.'],
-                  ['full', 'Full', 'Confirmations reply in the fleet group; summaries are posted there too.']] as [v, t, d]}
-            <button class="mode" class:on={settings.fleet_mode === v} disabled={!on('send_fleet')} onclick={() => set('fleet_mode', v, `${t} mode`)}>
-              <b>{t}</b><span>{d}</span>
-            </button>
-          {/each}
-        </div>
+        <table class="route">
+          <thead><tr><th></th><th>Fleet</th><th>Control</th></tr></thead>
+          <tbody>
+            {#each [['relay', 'Relays', 'Web reports, edits, deletes'],
+                    ['summary', 'Summaries', 'Periodic, end of shift, send now'],
+                    ['notice', 'Confirmations & notices', 'Replies to typed reports, questions, shift start/end, warnings']] as [tier, label, hint]}
+              <tr>
+                <td><b>{label}</b><span>{hint}</span></td>
+                {#each ['fleet', 'control'] as g}
+                  {@const k = `${tier}_${g}`}
+                  <td class="cell">
+                    <button class="chk" class:on={on(k)} disabled={g === 'fleet' && !on('send_fleet')} aria-pressed={on(k)}
+                      aria-label="{label} to {g} group"
+                      onclick={() => set(k, on(k) ? '0' : '1', `${label}: ${g} ${on(k) ? 'off' : 'on'}`)}>
+                      {#if on(k)}<Icon name="check" size={14} stroke={2.6} />{/if}
+                    </button>
+                  </td>
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+        {#if !on('send_fleet')}<p class="mute small">Fleet column is inactive while posting in the fleet group is off.</p>{/if}
 
         <div class="two">
           <label class="field"><span>Summary every (minutes, 0 = off)</span>
@@ -212,12 +225,18 @@
   .group .row { margin-top: 8px; }
   .group select { min-width: 0; }
 
-  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
-  .mode { text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: var(--r); box-shadow: inset 0 0 0 1px var(--hair); transition: box-shadow .15s, background .15s; }
-  .mode b { font-size: 13.5px; }
-  .mode span { font-size: 12px; color: var(--mute); }
-  .mode.on { box-shadow: inset 0 0 0 1.5px var(--ink); background: var(--surface); }
-  .mode:disabled { opacity: .45; }
+  .route { width: 100%; border-collapse: collapse; margin: 10px 0 6px; }
+  .route th { font: 600 10px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--mute); padding: 8px 0; text-align: center; }
+  .route td { padding: 10px 0; border-top: 1px solid var(--hair-2); }
+  .route td b { display: block; font-size: 14px; font-weight: 600; }
+  .route td span { font-size: 12px; color: var(--mute); }
+  .route .cell { text-align: center; width: 72px; }
+  .chk {
+    width: 26px; height: 26px; border-radius: 7px; display: inline-grid; place-items: center;
+    box-shadow: inset 0 0 0 1.5px var(--hair); color: var(--paper); transition: background .15s, box-shadow .15s;
+  }
+  .chk.on { background: var(--ink); box-shadow: none; }
+  .chk:disabled { opacity: .35; cursor: default; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
   .fail { margin: 0 16px 8px; }
@@ -226,6 +245,7 @@
     display: grid; grid-template-columns: 18px 44px 90px 70px 1fr; gap: 10px; align-items: baseline;
     padding: 8px 16px; border-top: 1px solid var(--hair-2); font-size: 13px;
   }
+  .activity li.mute { display: block; }
   .dir { font-weight: 700; color: var(--mute); }
   .out .dir { color: var(--signal); }
   .when { font-size: 11.5px; color: var(--mute); }
@@ -238,7 +258,7 @@
     .master { grid-column: auto; grid-row: auto; }
   }
   @media (max-width: 640px) {
-    .modes, .two { grid-template-columns: 1fr; }
+    .two { grid-template-columns: 1fr; }
     .activity li { grid-template-columns: 16px 40px 1fr; }
     .kind { display: none; }
     .body { grid-column: 2 / -1; }

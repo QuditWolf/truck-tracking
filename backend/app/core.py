@@ -22,10 +22,14 @@ DEFAULT_SETTINGS = {
     "fleet_jid": "",              # fleet group (operators post events here)
     "control_jid": "",            # control group (shifts, summaries, questions)
     "send_fleet": "1",            # hard switch: when off, nothing at all is posted in the fleet group
-    "relay_fleet": "1",           # relay web reports into the fleet group
-    "relay_control": "1",         # relay web reports into the control group
+    # three routing tiers, each to fleet and/or control
+    "relay_fleet": "1",           # web reports, edits, deletes
+    "relay_control": "1",
+    "summary_fleet": "0",         # periodic, end-of-shift and "send now" summaries
+    "summary_control": "1",
+    "notice_fleet": "0",          # confirmations, questions, shift start/end, stale-shift warning
+    "notice_control": "1",
     "read_fleet": "1",            # parse typed messages in the fleet group into reports
-    "fleet_mode": "silent",       # silent: fleet group gets relays only | full: also confirmations + summaries
     "summary_interval_min": "15", # periodic summary during an open shift; 0 = off
     "summary_on_shift_end": "1",
     "shift_stale_hours": "14",
@@ -105,6 +109,12 @@ def init_db(conn: sqlite3.Connection) -> None:
     for table, col, ddl in MIGRATIONS:
         if col not in {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+    # fleet_mode (silent|full) → per-tier switches, keeping behaviour identical
+    old = conn.execute("SELECT value FROM settings WHERE key = 'fleet_mode'").fetchone()
+    if old and not conn.execute("SELECT 1 FROM settings WHERE key = 'summary_fleet'").fetchone():
+        full = "1" if old["value"] == "full" else "0"
+        for k in ("summary_fleet", "notice_fleet"):
+            conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, full))
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
 

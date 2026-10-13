@@ -494,9 +494,8 @@ def admin_settings(user=Depends(admin), conn=Depends(get_conn)):
 
 @app.put("/api/admin/settings")
 def admin_settings_put(body: dict[str, str], user=Depends(admin), conn=Depends(get_conn)):
-    if body.get("fleet_mode", "silent") not in ("silent", "full"):
-        bad(ValueError("fleet_mode must be silent or full"))
-    for k in ("wa_enabled", "send_fleet", "relay_fleet", "relay_control", "read_fleet", "summary_on_shift_end"):
+    for k in ("wa_enabled", "send_fleet", "read_fleet", "summary_on_shift_end",
+              *(f"{t}_{g}" for t in relay.TIERS for g in ("fleet", "control"))):
         if k in body and str(body[k]) not in ("0", "1"):
             bad(ValueError(f"{k} must be 0 or 1"))
     for k in ("fleet_jid", "control_jid"):

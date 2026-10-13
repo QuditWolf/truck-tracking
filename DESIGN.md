@@ -125,11 +125,17 @@ Date only when not today: `@12 Oct 23:50`. Typed input may omit `@`, use `14.32`
 commas or spaces between trucks. Summaries keep their own layout, unsigned.
 
 Switches (Admin → WhatsApp, no redeploy): master on/off; **post in fleet group** (hard off: nothing
-is ever written there, all output goes to control, reading continues); relay to fleet; relay to
-control; read fleet group; summary at shift end. Modes:
+is ever written there); read fleet group; summary at shift end; and three routing tiers, each to
+fleet and/or control:
 
-- `silent` — fleet group gets relays only; confirmations, questions, summaries → control group
-- `full`   — confirmations and summaries also go to the fleet group
+| tier | what | default |
+|---|---|---|
+| relay | web reports, edits, deletes | fleet + control |
+| summary | periodic, end of shift, "send now" | control |
+| notice | confirmations, questions, shift start/end, stale-shift warning | control |
+
+Command replies (`summary`, `help`, errors) answer in the control group where they were asked.
+The old silent/full mode is migrated: full → summary + notice to fleet as well.
 
 ## Phases
 
