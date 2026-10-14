@@ -389,3 +389,16 @@ def test_admin_sees_everyones_reports_users_only_their_own(client):
     boss.post("/api/reports", json={"trucks": ["B"], "verb": "LS", "site": "SOC"})
     assert {r["user"] for r in boss.get("/api/reports?mine=false").json()} == {"Boss", "Ravi"}
     assert {r["user"] for r in ravi.get("/api/reports?mine=false").json()} == {"Ravi"}  # non-admin: own only
+
+
+def test_whatsapp_summary_has_final_counts_only_web_has_details(client):
+    u = login(client, "u@x.org", "Ravi")
+    u.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})
+    u.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC", "event_time": "2026-10-13T07:00",
+                                 "remarks": "wet paddy"})
+    u.post("/api/reports", json={"trucks": ["A"], "verb": "US", "site": "DAIRY", "event_time": "2026-10-13T08:00"})
+    s = u.get("/api/summary/shift").json()
+    assert "Loaded 1: SOC 1" in s["text"]  # inferred load, shown as a plain count
+    assert "inf" not in s["text"] and "Inferred" not in s["text"]
+    assert s["counts"]["loaded_inf"] == 1 and s["counts"]["notes"]  # detail kept for the web page
+    assert [(r["trucks"], r["verb"], r["remarks"], r["user"]) for r in s["remarks"]] == [("A", "LS", "wet paddy", "Ravi")]

@@ -2,7 +2,7 @@
   import Icon from '../lib/Icon.svelte'
   import ManualCounts from '../lib/ManualCounts.svelte'
   import Stat from '../lib/Stat.svelte'
-  import { api, dateTime, todayIST } from '../lib/api.js'
+  import { api, dateTime, time, todayIST } from '../lib/api.js'
   import { toast } from '../lib/stores.svelte.js'
 
   let { tick, registry, me } = $props()
@@ -157,24 +157,44 @@
       {#if data.trips && Object.keys(data.trips).length}
         <section class="card wide">
           <div class="card-h"><h3>Trips</h3>
-            <span class="legend"><i class="rep"></i>Reported <i class="gap"></i>Not reported <i class="dup"></i>Has duplicates</span></div>
+            <span class="legend"><i class="rep"></i>Reported <i class="gap"></i>Not reported <i class="dup"></i>Duplicates</span></div>
           <div class="card-b trips">
             {#each Object.entries(data.trips) as [truck, ts] (truck)}
               <div class="trip-row">
                 <span class="mono strong">{truck}</span>
                 <div class="trip-list">
-                  {#each ts as t}
-                    <div class="trip" class:carry={t.carry_in} class:dup={t.duplicates}
-                         title="{t.load_site || '?'} → {t.unload_site || '?'}{t.loaded === 'inf' ? ' · load inferred' : ''}{t.unloaded === 'inf' ? ' · unload inferred' : ''}">
-                      {#each SLOTS as [k, lab]}
-                        <span class="slot" class:on={t.slots[k]}>{t.slots[k] ? t.slots[k] : lab}</span>
-                      {/each}
+                  {#each ts as t, i}
+                    <div class="trip-card" class:carry={t.carry_in} class:dup={t.duplicates}>
+                      <div class="trip-head">
+                        <span class="mono">#{i + 1}</span>
+                        <span class="route mono">{t.load_site || (t.carry_in ? 'carried' : '?')} → {t.unload_site || '…'}</span>
+                        {#if t.loaded === 'inf'}<em>load inferred</em>{/if}
+                        {#if t.unloaded === 'inf'}<em>unload inferred</em>{/if}
+                        {#if t.duplicates}<em>{t.duplicates} dup</em>{/if}
+                        {#if !t.closed}<span class="pill live">current</span>{/if}
+                      </div>
+                      <div class="trip">
+                        {#each SLOTS as [k, lab]}
+                          <span class="slot" class:on={t.slots[k]}>{t.slots[k] ? t.slots[k] : lab}</span>
+                        {/each}
+                      </div>
                     </div>
                   {/each}
                 </div>
               </div>
             {/each}
           </div>
+        </section>
+      {/if}
+
+      {#if data.remarks?.length}
+        <section class="card wide">
+          <div class="card-h"><h3>Remarks</h3><span class="mute small">{data.remarks.length}</span></div>
+          <ul class="remarks">
+            {#each data.remarks as r (r.id)}
+              <li><span class="mono when">{time(r.event_time)}</span><span class="mono what">{r.trucks} {r.verb}{r.site ? ` ${r.site}` : ''}</span><span class="text">{r.remarks}</span><span class="mute small">{r.user}</span></li>
+            {/each}
+          </ul>
         </section>
       {/if}
 
@@ -248,10 +268,20 @@
   .trips { display: flex; flex-direction: column; gap: 10px; }
   .trip-row { display: grid; grid-template-columns: minmax(34px, max-content) 1fr; gap: 10px; align-items: start; }
   .trip-row > .mono { padding-top: 5px; }
-  .trip-list { display: flex; flex-wrap: wrap; gap: 6px; }
-  .trip { display: grid; grid-template-columns: repeat(8, auto); gap: 2px; padding: 3px; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair-2); }
-  .trip.carry { box-shadow: inset 0 0 0 1px var(--hair); background: repeating-linear-gradient(-45deg, var(--paper), var(--paper) 4px, var(--paper-2) 4px, var(--paper-2) 8px); }
-  .trip.dup { box-shadow: inset 0 0 0 1px var(--amber); }
+  .trip-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .trip-card { display: flex; flex-direction: column; gap: 5px; padding: 8px; border-radius: 10px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--hair-2); }
+  .trip-card.carry { background: repeating-linear-gradient(-45deg, var(--surface), var(--surface) 5px, var(--paper) 5px, var(--paper) 10px); }
+  .trip-card.dup { box-shadow: inset 0 0 0 1px var(--amber); }
+  .trip-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+  .trip-head .mono { font-weight: 600; }
+  .trip-head .route { color: var(--ink-2); font-weight: 500; }
+  .trip-head em { font-style: normal; color: var(--amber); font-size: 11.5px; }
+  .remarks { list-style: none; margin: 0; padding: 0 0 6px; }
+  .remarks li { display: grid; grid-template-columns: 44px auto 1fr auto; gap: 12px; align-items: baseline; padding: 8px 16px; border-top: 1px solid var(--hair-2); font-size: 13.5px; }
+  .remarks .when { font-size: 12px; color: var(--mute); }
+  .remarks .what { font-weight: 600; font-size: 12.5px; }
+  @media (max-width: 640px) { .remarks li { grid-template-columns: 40px 1fr; } .remarks .text, .remarks li > .mute { grid-column: 2; } }
+  .trip { display: grid; grid-template-columns: repeat(8, auto); gap: 2px; }
   .slot {
     font: 500 9.5px/1 var(--mono); padding: 5px 5px; border-radius: 5px; color: var(--mute); min-width: 30px; text-align: center;
     box-shadow: inset 0 0 0 1px var(--hair-2);

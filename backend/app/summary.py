@@ -5,7 +5,7 @@ from statistics import mean
 from typing import Optional
 
 from . import trips
-from .core import now, to_ist
+from .core import iso as core_iso, now, to_ist
 from .reports import analysis, load_shifts
 
 
@@ -32,8 +32,8 @@ POSITION_LINES = [("loading", "Loading"), ("loaded", "Loaded"), ("unloaded", "Un
 
 
 def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
-    def extra(inf, man):  # hand-added counts (man) are folded in without a tag
-        return f" ({inf} inf)" if inf else ""
+    def extra(inf, man):  # WhatsApp gets final counts only; inferred/manual detail lives on the web page
+        return ""
     lines = [title,
              f"Loaded {c.loaded}{extra(c.loaded_inf, c.loaded_manual)}" + (f": {_sites(c.loaded_by_site)}" if c.loaded_by_site else ""),
              f"Unloaded {c.unloaded}{extra(c.unloaded_inf, c.unloaded_manual)}" + (f": {_sites(c.unloaded_by_site)}" if c.unloaded_by_site else "")]
@@ -44,9 +44,6 @@ def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
                 lines.append(f"{label}: {v}")  # per truck, this shift
         elif v := c.position.get(key):
             lines.append(f"{label}: {','.join(v)}")
-    if notes and c.notes:
-        lines.append("Inferred:")
-        lines += c.notes
     return "\n".join(lines)
 
 
@@ -138,8 +135,16 @@ def shift_summary(conn, shift_id: Optional[int] = None) -> Optional[dict]:
     c = trips.count(seg, a.flags)
     manual = apply_manual(conn, sh.id, c)
     title = shift_label(sh, shifts)
+    remarks = [dict(r) for r in conn.execute(
+        "SELECT r.id, r.event_time, r.remarks, u.name AS user, "
+        "(SELECT GROUP_CONCAT(COALESCE(g.code, ''), ',') FROM report_trucks rt JOIN registry g ON g.id = rt.truck_id "
+        " WHERE rt.report_id = r.id) AS trucks, v.code AS verb, s.code AS site "
+        "FROM reports r JOIN users u ON u.id = r.user_id JOIN registry v ON v.id = r.verb_id "
+        "LEFT JOIN registry s ON s.id = r.site_id "
+        "WHERE r.deleted = 0 AND r.remarks != '' AND r.event_time >= ? AND (? IS NULL OR r.event_time < ?) "
+        "ORDER BY r.event_time", (core_iso(sh.start), sh.end and core_iso(sh.end), sh.end and core_iso(sh.end)))]
     return {
-        "shift_id": sh.id, "title": title, "open": sh.end is None, "manual": manual,
+        "shift_id": sh.id, "title": title, "open": sh.end is None, "manual": manual, "remarks": remarks,
         "counts": c.__dict__, "text": counts_text(title, c),
         "durations": durations(seg),
         "trips": {truck: [_trip_view(t) for t in ts] for truck, ts in sorted(seg.trips.items())},
