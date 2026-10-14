@@ -18,7 +18,7 @@ def shift_label(shift: trips.Shift, all_shifts: list[trips.Shift]) -> str:
         end = f"{shift.end:%d %b %H:%M}"  # overnight: say which day it ended
     else:
         end = f"{shift.end:%H:%M}"
-    return f"Shift {shift.start:%d %b} #{n} {shift.start:%H:%M}-{end}"
+    return f"Shift {shift.start:%d %b} #{n} {shift.start:%H:%M}-{end}" + (" (ended)" if shift.end else "")
 
 
 def _sites(d: dict) -> str:
@@ -153,7 +153,7 @@ def shift_summary(conn, shift_id: Optional[int] = None) -> Optional[dict]:
     remarks = []
     for row in conn.execute(
             "SELECT * FROM reports WHERE deleted = 0 AND remarks != '' AND event_time >= ? "
-            "AND (? IS NULL OR event_time < ?) ORDER BY event_time",
+            "AND (? IS NULL OR event_time <= ?) ORDER BY event_time",
             (core_iso(sh.start), sh.end and core_iso(sh.end), sh.end and core_iso(sh.end))).fetchall():
         r = report_dict(conn, reg, row)  # canonical (post-merge) truck/site codes
         remarks.append({"id": r["id"], "event_time": r["event_time"], "remarks": r["remarks"], "user": r["user"],

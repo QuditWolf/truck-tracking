@@ -108,7 +108,7 @@ def test_shift_rules(client):
     b = u.post("/api/shifts/start", json={"at": "2026-10-13T18:00"}).json()  # auto-ends a
     shifts = u.get("/api/shifts").json()
     assert [s["open"] for s in shifts] == [True, False]
-    assert shifts[1]["ended_at"] == "2026-10-13T18:00:00+05:30"
+    assert shifts[1]["ended_at"] == "2026-10-13T17:59:00+05:30"  # minute before the new shift
     assert u.post("/api/shifts/start", json={"at": "2026-10-13T12:00"}).status_code == 400
     assert u.patch(f"/api/shifts/{a['id']}", json={"ended_at": "2026-10-13T19:00"}).status_code == 400  # overlap
     assert u.post("/api/shifts/end", json={"at": "2026-10-13T17:00"}).status_code == 400  # before start
@@ -217,8 +217,8 @@ def test_overnight_shift_label_shows_end_date():
     from app.trips import Shift
     a = Shift(1, datetime(2026, 10, 13, 18, 0, tzinfo=IST), datetime(2026, 10, 14, 5, 0, tzinfo=IST))
     b = Shift(2, datetime(2026, 10, 14, 6, 0, tzinfo=IST), datetime(2026, 10, 14, 17, 0, tzinfo=IST))
-    assert shift_label(a, [a, b]) == "Shift 13 Oct #1 18:00-14 Oct 05:00"
-    assert shift_label(b, [a, b]) == "Shift 14 Oct #1 06:00-17:00"
+    assert shift_label(a, [a, b]) == "Shift 13 Oct #1 18:00-14 Oct 05:00 (ended)"
+    assert shift_label(b, [a, b]) == "Shift 14 Oct #1 06:00-17:00 (ended)"
 
 
 def test_admin_edits_users_and_disables_temporarily(client):
@@ -494,3 +494,21 @@ def test_supervisor_link(client):
     assert anon.get(f"/api/public/{t2}/summary").status_code == 200
     boss.delete("/api/admin/supervisor")
     assert anon.get(f"/api/public/{t2}/summary").status_code == 404
+
+
+def test_report_in_the_minute_the_shift_ends_counts(client):
+    """14 Oct: A LEFT BG @19:04 and the shift ended @19:04 — A's unload was missing."""
+    boss = login(client, "boss@x.org", "Boss")
+    for code, t in (("SKP", "loading"), ("BG", "unloading")):
+        boss.post("/api/admin/registry", json={"kind": "site", "code": code, "site_type": t})
+    boss.post("/api/shifts/start", json={"at": "2026-10-14T15:38"})
+    boss.post("/api/reports", json={"trucks": ["A"], "verb": "ENTER", "site": "BG", "event_time": "2026-10-14T18:59"})
+    boss.post("/api/reports", json={"trucks": ["A"], "verb": "LEFT", "site": "BG", "event_time": "2026-10-14T19:04"})
+    boss.post("/api/shifts/end", json={"at": "2026-10-14T19:04"})
+    s = boss.get("/api/summary/shift").json()
+    assert s["counts"]["unloaded"] == 1 and "Unloaded: A*1" in s["text"]
+    assert s["text"].startswith("Shift 14 Oct #1 15:38-19:04 (ended)")
+    # a new shift starting 19:10 owns its first minute
+    boss.post("/api/shifts/start", json={"at": "2026-10-14T19:10"})
+    boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SKP", "event_time": "2026-10-14T19:10"})
+    assert "Loading: A" in boss.get("/api/summary/shift").json()["text"]

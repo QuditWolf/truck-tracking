@@ -47,7 +47,7 @@ def main(arg: str = "") -> None:
 
     reg = Registry(conn)
     end = sh["ended_at"] or "9999"
-    rows = conn.execute("SELECT * FROM reports WHERE event_time >= ? AND event_time < ? ORDER BY event_time, id",
+    rows = conn.execute("SELECT * FROM reports WHERE event_time >= ? AND event_time <= ? ORDER BY event_time, id",
                         (sh["started_at"], end)).fetchall()
     a = reports.analysis(conn, reg)
     print(f"\n== events ({len(rows)}, incl. deleted)")

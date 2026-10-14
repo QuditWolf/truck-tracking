@@ -1,6 +1,6 @@
 """Reports (one submission, 1+ trucks), shifts, and the bridge to the trip engine."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from . import trips
@@ -97,7 +97,7 @@ def site_usage(conn, reg: Registry, shift: trips.Shift) -> dict[str, int]:
     """Truck-events per canonical site inside a shift's window."""
     rows = conn.execute(
         "SELECT r.site_id, COUNT(*) AS n FROM reports r JOIN report_trucks rt ON rt.report_id = r.id "
-        "WHERE r.deleted = 0 AND r.site_id IS NOT NULL AND r.event_time >= ? AND (? IS NULL OR r.event_time < ?) "
+        "WHERE r.deleted = 0 AND r.site_id IS NOT NULL AND r.event_time >= ? AND (? IS NULL OR r.event_time <= ?) "
         "GROUP BY r.site_id",
         (iso(shift.start), shift.end and iso(shift.end), shift.end and iso(shift.end))).fetchall()
     out: dict[str, int] = {}
@@ -206,7 +206,8 @@ def open_shift(conn):
 
 
 def _overlaps(conn, start: str, end: Optional[str], exclude: Optional[int] = None) -> bool:
-    """Shift [start, end) overlaps any other non-deleted shift? Open shifts extend to +inf."""
+    """Would this shift overlap another? Open shifts extend to +inf. Touching at one minute is allowed
+    (that minute belongs to the earlier shift)."""
     far = "9999"
     for r in conn.execute("SELECT id, started_at, ended_at FROM shifts WHERE deleted = 0").fetchall():
         if r["id"] == exclude:
@@ -223,7 +224,8 @@ def start_shift(conn, user_id: int, site: Optional[str] = None, at: Optional[str
     if cur:  # one open shift at a time: starting a new one ends the old one
         if to_ist(start) <= to_ist(cur["started_at"]):
             raise ValueError("new shift must start after the open shift started")
-        end_shift(conn, user_id, at=start)
+        # previous shift ends the minute before, so reports in the new shift's first minute belong to it
+        end_shift(conn, user_id, at=iso(to_ist(start) - timedelta(minutes=1)))
     if _overlaps(conn, start, None):
         raise ValueError("shift would overlap an existing shift")
     site_id = resolve_or_create(conn, reg, "site", site, user_id).id if site else None
@@ -241,7 +243,7 @@ def end_shift(conn, user_id: int, at: Optional[str] = None) -> dict:
     if not cur:
         raise ValueError("no open shift")
     end = minute(at or now())
-    if to_ist(end) <= to_ist(cur["started_at"]):
+    if to_ist(end) < to_ist(cur["started_at"]):
         raise ValueError("shift must end after it started")
     conn.execute("UPDATE shifts SET ended_at = ?, ended_by = ? WHERE id = ?", (end, user_id, cur["id"]))
     row = conn.execute("SELECT * FROM shifts WHERE id = ?", (cur["id"],)).fetchone()
@@ -259,7 +261,7 @@ def edit_shift(conn, shift_id: int, user_id: int, started_at=None, ended_at=None
         raise ValueError("not found")
     start = minute(started_at) if started_at else row["started_at"]
     end = (minute(ended_at) if ended_at else None) if ended_at is not None else row["ended_at"]
-    if end and to_ist(end) <= to_ist(start):
+    if end and to_ist(end) < to_ist(start):
         raise ValueError("shift must end after it started")
     if not deleted and _overlaps(conn, start, end, exclude=shift_id):
         raise ValueError("shift would overlap an existing shift")

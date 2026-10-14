@@ -50,7 +50,8 @@ class Shift:
     end: Optional[datetime]  # None = open
 
     def contains(self, t: datetime) -> bool:
-        return self.start <= t and (self.end is None or t < self.end)
+        """Start and end minutes both included: a report made in the minute the shift ended still counts."""
+        return self.start <= t and (self.end is None or t <= self.end)
 
 
 @dataclass
