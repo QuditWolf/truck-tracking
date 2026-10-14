@@ -1,7 +1,8 @@
 <script>
   import { flip } from 'svelte/animate'
   // Tile picker with an "other" tile for values not in the registry.
-  let { options = [], value = $bindable(), multi = false, label = '', variant = 'code', placeholder = 'Other…' } = $props()
+  // suggested: code to highlight as a suggestion while nothing is chosen (tap = confirm, other tile = replace)
+  let { options = [], value = $bindable(), multi = false, label = '', variant = 'code', placeholder = 'Other…', suggested = '' } = $props()
 
   let adding = $state(false)
   let custom = $state('')
@@ -46,10 +47,12 @@
   <div class="tiles {variant}">
     {#each tiles as t (t.code)}
       <button type="button" class="tile" class:on={isOn(t.code)} class:new={t.isNew} class:long={t.code.length > 8}
+              class:sug={!multi && !value && t.code === suggested}
               title={t.title} style:grid-column="span {span(t.code)}" onclick={() => toggle(t.code)}
               animate:flip={{ duration: 320 }}>
         <span class="code">{t.code}</span>
         {#if t.sub}<span class="sub">{t.sub}</span>{/if}
+        {#if !multi && !value && t.code === suggested}<span class="tag">suggested</span>{/if}
       </button>
     {/each}
     {#if adding}
@@ -89,6 +92,10 @@
     font-size: 11px; line-height: 1.15; color: var(--mute); text-align: center;
     overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   }
+  .tile.sug { background: var(--signal-soft); color: var(--signal); box-shadow: inset 0 0 0 1.5px var(--signal); }
+  .tile.sug .sub { color: color-mix(in srgb, var(--signal) 70%, transparent); }
+  .tag { position: absolute; top: -7px; right: 6px; padding: 1px 5px; border-radius: 5px; background: var(--signal); color: #fff;
+         font: 600 8.5px/1.4 var(--mono); letter-spacing: .05em; text-transform: uppercase; }
   .tile.on .sub { color: color-mix(in srgb, var(--paper) 65%, transparent); }
   .tile.new .sub { color: var(--signal); font: 600 9.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
   .tile.add { color: var(--mute); box-shadow: inset 0 0 0 1px var(--hair); background: transparent; border: 1px dashed transparent; }

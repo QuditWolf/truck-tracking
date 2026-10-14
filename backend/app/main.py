@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import access, auth, core, inbound, registry, relay, reports, summary, wa, wa_client
+from . import access, auth, core, inbound, registry, relay, reports, suggest, summary, wa, wa_client
 from .auth import admin, current_user, get_conn, member
 
 STATIC = Path(__file__).parent.parent.parent / "web" / "dist"
@@ -196,17 +196,17 @@ async def live(request: Request, user=Depends(member)):
         conn = core.connect()
         last, idle = None, 0
         try:
-            for _ in range(600):  # ~10 min, then the browser reconnects (and re-checks the session)
+            for _ in range(1200):  # ~10 min, then the browser reconnects (and re-checks the session)
                 if await request.is_disconnected():
                     break
                 v = await asyncio.to_thread(data_version, conn)
                 if v != last:
                     last, idle = v, 0
                     yield f"data: {v}\n\n"
-                elif (idle := idle + 1) >= 15:
+                elif (idle := idle + 1) >= 30:
                     idle = 0
                     yield ": ping\n\n"  # keeps proxies from closing an idle stream
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)
         finally:
             conn.close()
 
@@ -247,6 +247,13 @@ class ReportPatch(BaseModel):
 def _with_flags(conn, items: list[dict]) -> list[dict]:
     a = reports.analysis(conn)
     return [{**r, "flags": [] if r["deleted"] else reports.flags_for(a, r["id"], r["trucks"])} for r in items]
+
+
+@app.get("/api/suggest")
+def get_suggestion(trucks: str, verb: Optional[str] = None, user=Depends(member), conn=Depends(get_conn)):
+    """Likely next event and site for the selected trucks (comma-separated). Advisory only."""
+    codes = [t for t in trucks.split(",") if t.strip()]
+    return suggest.suggest(conn, codes, verb or None) if codes else {"verb": None, "site": None, "per_truck": {}}
 
 
 @app.post("/api/reports/check")

@@ -188,9 +188,43 @@ def _missing(trip: Trip, upto: int, after: int) -> list[str]:
     return [SLOT_NAMES[k] for k in REQUIRED if after < k < upto and k not in trip.slots]
 
 
+class _At:
+    """Stand-in for a trip when only the last slot matters (slot_of needs .last)."""
+    def __init__(self, last: int):
+        self.last = last
+
+
+def order_same_minute(events: list[Event]) -> list[Event]:
+    """Reports are whole minutes, and several people post at once. Within one minute a truck's reports
+    are put in cycle order (ENTER before LEFT, LS before LO…) continuing from the previous step,
+    whatever order they arrived in. Across minutes, time order rules."""
+    out: list[Event] = []
+    last = -1
+    i = 0
+    while i < len(events):
+        j = i
+        while j < len(events) and events[j].time == events[i].time:
+            j += 1
+        group = events[i:j]
+        if len(group) > 1:
+            def rank(e, last=last):
+                s = slot_of(e, _At(last) if last >= 0 else None)
+                return (99 if s is None else (s - last - 1) % 8 if last >= 0 else s,
+                        e.report_id if e.report_id >= 0 else float("inf"))  # a draft is always newest
+            group = sorted(group, key=rank)
+        for e in group:
+            s = slot_of(e, _At(last) if last >= 0 else None)
+            if s is not None:
+                last = s
+        out += group
+        i = j
+    return out
+
+
 def _walk(truck: str, events: list[Event], carry: bool, flags) -> list[Trip]:
     trips: list[Trip] = []
     cur: Optional[Trip] = None
+    events = order_same_minute(events)
 
     def flag(e: Event, code: str, text: str, ref: Optional[Event] = None):
         flags.setdefault((e.report_id, truck), []).append(Flag(code, text, ref))

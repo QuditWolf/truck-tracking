@@ -208,3 +208,14 @@ def test_summary_layout_blocks():
         "Shift X\n\n"
         "Loaded *1*: SOC 1\nHauling to unload: 1 (A)\nUnloaded 1: DAIRY 1\n\n"
         "Loading: B\nLoaded: A*1\nUnloaded: D*1")
+
+
+def test_same_minute_reports_in_cycle_order_whatever_arrival_order():
+    # PINKI 17:17: LEFT happened to arrive before ENTER (two reporters, same minute)
+    a1, c1 = run([ev(2, "P", "LEFT", "BG", "17:17"), ev(1, "P", "ENTER", "BG", "17:17")])
+    a2, c2 = run([ev(1, "P", "ENTER", "BG", "17:17"), ev(2, "P", "LEFT", "BG", "17:17")])
+    for c in (c1, c2):
+        assert (c.unloaded, c.unloaded_inf) == (1, 0) and sum(len(t) for t in [c.per_truck]) == 1
+    # report ids in the wrong order too: LS posted after LO in the same minute
+    _, c = run([ev(5, "Q", "LO", "SKP", "09:00"), ev(6, "Q", "LS", "SKP", "09:00"), ev(7, "Q", "UO", "BG", "10:00")])
+    assert (c.loaded, c.loaded_inf, c.unloaded) == (1, 0, 1)

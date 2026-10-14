@@ -109,15 +109,16 @@ def site_usage(conn, reg: Registry, shift: trips.Shift) -> dict[str, int]:
 
 
 def sites_by_usage(conn, reg: Registry) -> list[dict]:
-    """Sites ordered by events in the current shift, then the previous shift (ties keep registry order)."""
+    """Site order for the report form, fixed for the whole shift: by events in the previous shift, then the
+    one before (ties keep registry order). Tiles never move while people are reporting."""
     sites = reg.listing("site")
     shifts = load_shifts(conn)
     if not shifts:
         return sites
-    cur_i = next((i for i in range(len(shifts) - 1, -1, -1) if shifts[i].end is None), len(shifts) - 1)
-    cur = site_usage(conn, reg, shifts[cur_i])
-    prev = site_usage(conn, reg, shifts[cur_i - 1]) if cur_i > 0 else {}
-    return sorted(sites, key=lambda s: (-cur.get(s["code"], 0), -prev.get(s["code"], 0)))  # stable sort
+    cur_i = next((i for i in range(len(shifts) - 1, -1, -1) if shifts[i].end is None), len(shifts))
+    prev = site_usage(conn, reg, shifts[cur_i - 1]) if cur_i >= 1 else {}
+    prev2 = site_usage(conn, reg, shifts[cur_i - 2]) if cur_i >= 2 else {}
+    return sorted(sites, key=lambda s: (-prev.get(s["code"], 0), -prev2.get(s["code"], 0)))  # stable sort
 
 
 # ── writing ─────────────────────────────────────────────────────────────────

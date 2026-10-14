@@ -86,6 +86,15 @@ Load attributed to the shift + loading site where it happened; unload likewise.
 - Events outside any shift are flagged; the web form warns before sending.
 - Shift open longer than `shift_stale_hours` → warning (not auto-closed).
 
+## Report form: suggestions, stable layout
+
+- Tap a truck → the next cycle step after its last report is suggested (orange, "suggested" tag),
+  with a site: loading steps → where it last loaded (else the shift's loading site), unloading steps →
+  where it last unloaded. Tap a suggestion to confirm; tap another tile to replace; Send uses it as is.
+  Several trucks: suggest only what all agree on. Nothing is sent automatically.
+- Tiles never move during a shift: site order = previous shift's usage, fixed at shift start.
+- Same-minute reports for a truck are ordered by the cycle, not by arrival.
+
 ## Untracked trucks (manual counts)
 
 Any member can add "+N loads/unloads" for a truck nobody reported (Summary → Untracked trucks),

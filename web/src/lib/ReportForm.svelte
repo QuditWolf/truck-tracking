@@ -15,9 +15,10 @@
   const shift = untrack(() => registry.shift)
   let trucks = $state(r0 ? [...r0.trucks] : [])
   let verb = $state(r0?.verb || '')
-  // pre-select the shift's default site only if it's a loading site (LS/LO happen there)
-  const defaultSite = untrack(() => registry.site.find((x) => x.code === shift?.default_site && x.site_type === 'loading')?.code || '')
-  let site = $state(r0 ? r0.site || '' : defaultSite)
+  let site = $state(r0 ? r0.site || '' : '')
+  // Suggested next step for the chosen trucks (cycle order) and site — shown, not chosen, until tapped.
+  let sVerb = $state('')
+  let sSite = $state('')
   let remarks = $state(r0?.remarks || '')
   let skipFleet = $state(false) // admins only: keep this report out of the fleet group
   let advanced = $state(false)
@@ -30,16 +31,33 @@
   let error = $state('')
   let askShift = $state(false)
 
+  const effVerb = $derived(verb || sVerb)
+  const effSite = $derived(site || sSite)
   const draft = $derived({
-    trucks, verb, site: site || null, remarks,
+    trucks, verb: effVerb, site: effSite || null, remarks,
     event_time: when && when !== initialWhen ? when : r0 ? r0.event_time : null,
   })
-  const ready = $derived(trucks.length > 0 && !!verb)
+  const ready = $derived(trucks.length > 0 && !!effVerb)
+
+  let sugTimer
+  $effect(() => {
+    const t = trucks.join(','), v = verb
+    tick
+    clearTimeout(sugTimer)
+    if (r0 || !t) { sVerb = ''; sSite = ''; return }
+    sugTimer = setTimeout(async () => {
+      try {
+        const r = await api.get(`/api/suggest?trucks=${encodeURIComponent(t)}${v ? `&verb=${v}` : ''}`)
+        sVerb = v ? '' : r.verb || ''
+        sSite = r.site || ''
+      } catch { /* suggestions are optional */ }
+    }, 120)
+  })
 
   // LS/LO only at loading sites, US/UO only at unloading sites; ENTER/LEFT anywhere.
   // Sites without a type yet stay available.
-  const fits = (x) => (['LS', 'LO'].includes(verb) ? x.site_type !== 'unloading'
-    : ['US', 'UO'].includes(verb) ? x.site_type !== 'loading' : true)
+  const fits = (x) => (['LS', 'LO'].includes(effVerb) ? x.site_type !== 'unloading'
+    : ['US', 'UO'].includes(effVerb) ? x.site_type !== 'loading' : true)
   const siteOptions = $derived(registry.site.filter(fits))
   $effect(() => {
     const chosen = registry.site.find((x) => x.code === site)
@@ -97,7 +115,7 @@
     try {
       const body = { ...draft, ...(startShift ? { start_shift: true } : {}), ...(skipFleet ? { skip_fleet: true } : {}) }
       const r = r0 ? await api.patch(`/api/reports/${r0.id}`, body) : await api.post('/api/reports', body)
-      if (!r0) { trucks = []; remarks = ''; when = ''; advanced = false; skipFleet = false }
+      if (!r0) { trucks = []; verb = ''; site = ''; remarks = ''; when = ''; advanced = false; skipFleet = false }
       onDone(r, startShift)
     } catch (e) {
       error = e.message
@@ -110,8 +128,9 @@
 <form class="composer" class:editing={!!r0} onsubmit={(e) => { e.preventDefault(); submit() }}>
   <div class="fields">
     <Picker label="Truck" options={registry.truck} bind:value={trucks} multi />
-    <Picker label="Event" options={registry.verb} bind:value={verb} variant="labelled" />
-    <Picker label="Site" options={siteOptions} bind:value={site} variant="labelled" />
+    <Picker label="Event" options={registry.verb} bind:value={verb} variant="labelled" suggested={sVerb} />
+    <Picker label="Site" options={siteOptions} bind:value={site} variant="labelled"
+      suggested={siteOptions.some((x) => x.code === sSite) ? sSite : ''} />
 
     <div class="extras">
       <input class="input" bind:value={remarks} placeholder="Remarks — optional" maxlength="200" />
@@ -142,8 +161,8 @@
     <div class="ticket" class:ready>
       {#if ready}
         <span>{trucks.join(',')}</span>
-        <span class="t-verb">{verb}</span>
-        {#if site}<span>{site}</span>{/if}
+        <span class="t-verb">{effVerb}</span>
+        {#if effSite}<span>{effSite}</span>{/if}
         <span class="t-dim">@{shownTime}</span>
         {#if me}<span class="t-user">~{me.signature || me.name.split(' ')[0]}</span>{/if}
       {:else}

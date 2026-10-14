@@ -193,7 +193,7 @@ def test_parallel_requests_do_not_share_cursor(client):
     assert set(codes) == {200}
 
 
-def test_sites_sorted_by_current_then_previous_shift(client):
+def test_sites_sorted_by_previous_shift_and_frozen_during_shift(client):
     boss = login(client, "boss@x.org", "Boss")
     seed(boss)  # sites DAIRY, KN4, SOC (alphabetical by default)
     boss.post("/api/admin/registry", json={"kind": "site", "code": "LG", "site_type": "loading"})
@@ -202,12 +202,12 @@ def test_sites_sorted_by_current_then_previous_shift(client):
 
     boss.post("/api/shifts/start", json={"at": "2026-10-12T06:00"})
     boss.post("/api/reports", json={"trucks": ["A", "B"], "verb": "LS", "site": "LG", "event_time": "2026-10-12T07:00"})
-    boss.post("/api/reports", json={"trucks": ["C"], "verb": "LS", "site": "KN4", "event_time": "2026-10-12T07:10"})
-    assert order() == ["LG", "KN4", "DAIRY", "SOC"]  # A,B counts as 2 events
+    assert order() == ["DAIRY", "KN4", "LG", "SOC"]  # frozen during the shift: no shuffling
 
-    boss.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})  # previous shift ends here
+    boss.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})  # previous shift's usage now decides
+    assert order() == ["LG", "DAIRY", "KN4", "SOC"]
     boss.post("/api/reports", json={"trucks": ["D"], "verb": "LS", "site": "SOC", "event_time": "2026-10-13T07:00"})
-    assert order() == ["SOC", "LG", "KN4", "DAIRY"]  # current shift first, then previous shift
+    assert order() == ["LG", "DAIRY", "KN4", "SOC"]  # still frozen
 
 
 def test_overnight_shift_label_shows_end_date():
@@ -512,3 +512,28 @@ def test_report_in_the_minute_the_shift_ends_counts(client):
     boss.post("/api/shifts/start", json={"at": "2026-10-14T19:10"})
     boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SKP", "event_time": "2026-10-14T19:10"})
     assert "Loading: A" in boss.get("/api/summary/shift").json()["text"]
+
+
+def test_suggestions_follow_each_trucks_last_step(client):
+    boss = login(client, "boss@x.org", "Boss")
+    for code, t in (("SKP", "loading"), ("KN4", "loading"), ("BG", "unloading"), ("DAIRY", "unloading")):
+        boss.post("/api/admin/registry", json={"kind": "site", "code": code, "site_type": t})
+    boss.post("/api/shifts/start", json={"site": "SKP", "at": "2026-10-14T06:00"})
+    post = lambda t, v, site, hm: boss.post("/api/reports", json={"trucks": [t], "verb": v, "site": site,
+                                                                 "event_time": f"2026-10-14T{hm}"})
+    sug = lambda trucks, verb=None: boss.get(f"/api/suggest?trucks={trucks}" + (f"&verb={verb}" if verb else "")).json()
+    assert (sug("A")["verb"], sug("A")["site"]) == ("ENTER", "SKP")  # nothing yet → start of cycle, shift's site
+    post("A", "LS", "KN4", "07:00")
+    assert (sug("A")["verb"], sug("A")["site"]) == ("LO", "KN4")  # same site
+    post("A", "LEFT", "KN4", "07:40")
+    assert (sug("A")["verb"], sug("A")["site"]) == ("ENTER", None)  # no unloading history, no usage yet
+    post("B", "ENTER", "DAIRY", "07:30")
+    post("A", "ENTER", "BG", "08:20")
+    assert (sug("A")["verb"], sug("A")["site"]) == ("US", "BG")
+    post("A", "LEFT", "BG", "08:40")
+    assert (sug("A")["verb"], sug("A")["site"]) == ("ENTER", "KN4")  # back to where A last loaded
+    assert sug("A", "ENTER")["site"] == "SKP" or sug("A", "ENTER")["site"] == "KN4"  # user picked ENTER → loading side
+    # several trucks: only what they agree on
+    post("C", "LS", "SKP", "08:00")
+    both = sug("A,C")
+    assert both["verb"] is None and both["site"] is None
