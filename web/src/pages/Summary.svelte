@@ -179,7 +179,7 @@
       {/if}
 
       {#if mode === 'shift' && data.shift_id}
-        <div class="wide"><ManualCounts shiftId={data.shift_id} entries={data.manual || []} {registry} {me} /></div>
+        <div class="wide"><ManualCounts shiftId={data.shift_id} entries={data.manual || []} perTruck={c.per_truck} {registry} {me} /></div>
       {/if}
 
       {#if c.notes?.length || data.flags?.length}

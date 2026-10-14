@@ -6,10 +6,11 @@
   import { api, time } from './api.js'
   import { toast } from './stores.svelte.js'
 
-  let { shiftId, entries = [], registry, me } = $props()
+  // perTruck: current counts for this shift, so the dialog can show what each entry adds up to
+  let { shiftId, entries = [], registry, me, perTruck = {} } = $props()
 
   let open = $state(false)
-  let truck = $state('')
+  let trucks = $state([])
   let kind = $state('load')
   let count = $state(1)
   let site = $state('')
@@ -18,7 +19,7 @@
   let error = $state('')
 
   function start() {
-    truck = ''; kind = 'load'; count = 1; site = registry.shift?.default_site || ''; note = ''; error = ''
+    trucks = []; kind = 'load'; count = 1; site = registry.shift?.default_site || ''; note = ''; error = ''
     open = true
   }
 
@@ -26,8 +27,8 @@
     busy = true
     error = ''
     try {
-      await api.post('/api/manual', { truck, kind, count, site: site || null, note, shift_id: shiftId })
-      toast(`${truck} +${count} ${kind}${count > 1 ? 's' : ''} added`)
+      await api.post('/api/manual', { trucks, kind, count, site: site || null, note, shift_id: shiftId })
+      toast(`${trucks.join(', ')} +${count} ${kind}${count > 1 ? 's' : ''} each`)
       open = false
     } catch (e) {
       error = e.message
@@ -35,6 +36,12 @@
       busy = false
     }
   }
+
+  const field = $derived(kind === 'load' ? 'loads' : 'unloads')
+  const preview = $derived(trucks.map((t) => {
+    const before = perTruck[t]?.[field] || 0
+    return { t, before, after: before + count }
+  }))
 
   async function remove(m) {
     try {
@@ -69,25 +76,31 @@
 
 <Modal bind:open title="Add untracked truck">
   <form class="stack" id="manualform" onsubmit={(e) => { e.preventDefault(); save() }}>
-    <Picker label="Truck" options={registry.truck} bind:value={truck} placeholder="Truck / reg. no." />
+    <Picker label="Trucks" options={registry.truck} bind:value={trucks} multi placeholder="Truck / reg. no." />
     <div class="row2">
       <div class="seg">
-        <button type="button" class:on={kind === 'load'} onclick={() => (kind = 'load')}>Loads</button>
-        <button type="button" class:on={kind === 'unload'} onclick={() => (kind = 'unload')}>Unloads</button>
+        <button type="button" class:on={kind === 'load'} onclick={() => (kind = 'load')}>+ Loads</button>
+        <button type="button" class:on={kind === 'unload'} onclick={() => (kind = 'unload')}>+ Unloads</button>
       </div>
       <div class="stepper">
         <button type="button" class="btn quiet sm icon" onclick={() => (count = Math.max(1, count - 1))} aria-label="Less">−</button>
-        <span class="mono">{count}</span>
+        <span class="mono">+{count}</span>
         <button type="button" class="btn quiet sm icon" onclick={() => (count = Math.min(50, count + 1))} aria-label="More">+</button>
       </div>
     </div>
     <Picker label="Site (optional)" options={registry.site} bind:value={site} variant="labelled" />
     <input class="input" bind:value={note} placeholder="Note — optional (e.g. contractor truck)" maxlength="120" />
+    {#if preview.length}
+      <div class="preview">
+        <span class="eyebrow">Adds {count} {field} to each</span>
+        <p class="mono">{#each preview as p}<span><b>{p.t}</b> {p.before} → {p.after}</span>{/each}</p>
+      </div>
+    {/if}
     {#if error}<p class="notice err">{error}</p>{/if}
   </form>
   {#snippet actions()}
     <button class="btn ghost" onclick={() => (open = false)}>Cancel</button>
-    <button class="btn signal" type="submit" form="manualform" disabled={!truck || busy}>Add to summary</button>
+    <button class="btn signal" type="submit" form="manualform" disabled={!trucks.length || busy}>Add to summary</button>
   {/snippet}
 </Modal>
 
@@ -100,6 +113,8 @@
   .stack { display: flex; flex-direction: column; gap: 16px; }
   .row2 { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
   .stepper { display: flex; align-items: center; gap: 10px; }
-  .stepper .mono { font-size: 18px; font-weight: 600; min-width: 24px; text-align: center; }
+  .stepper .mono { font-size: 18px; font-weight: 600; min-width: 34px; text-align: center; }
+  .preview { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--r); background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair-2); }
+  .preview p { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
   @media (max-width: 520px) { li { grid-template-columns: 1fr auto; } li .mute { grid-column: 1; } }
 </style>

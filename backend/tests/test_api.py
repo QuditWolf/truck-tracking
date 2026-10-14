@@ -354,3 +354,14 @@ def test_manual_counts_for_untracked_trucks(client):
     assert ravi.get("/api/summary/shift").json()["counts"]["loaded"] == 1
     kinds = [r["kind"] for r in client.app.state.conn.execute("SELECT kind FROM outbox WHERE kind = 'manual'")]
     assert len(kinds) == 3  # add, add, delete → relayed
+
+
+def test_manual_counts_append_and_take_several_trucks(client):
+    u = login(client, "u@x.org", "U")
+    u.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})
+    u.post("/api/reports", json={"trucks": ["A"], "verb": "LO", "site": "SOC", "event_time": "2026-10-13T07:00"})
+    out = u.post("/api/manual", json={"trucks": ["A", "b", "pb10"], "kind": "load", "count": 2, "site": "SOC"}).json()
+    assert [e["truck"] for e in out] == ["A", "B", "PB10"]
+    u.post("/api/manual", json={"trucks": ["A"], "kind": "load", "count": 1})  # adds on top again
+    pt = u.get("/api/summary/shift").json()["counts"]["per_truck"]
+    assert (pt["A"]["loads"], pt["B"]["loads"], pt["PB10"]["loads"]) == (4, 2, 2)  # 1 reported + 2 + 1

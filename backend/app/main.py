@@ -334,7 +334,8 @@ def get_board(user=Depends(member), conn=Depends(get_conn)):
 
 
 class ManualIn(BaseModel):
-    truck: str
+    trucks: list[str] = []
+    truck: str = ""  # single truck (older clients)
     kind: str  # load | unload
     count: int = 1
     site: Optional[str] = None
@@ -346,29 +347,32 @@ class ManualIn(BaseModel):
 def add_manual(body: ManualIn, user=Depends(member), conn=Depends(get_conn)):
     """Any member: count loads/unloads of a truck nobody reported (untracked trucks)."""
     reg = registry.Registry(conn)
-    if body.kind not in ("load", "unload") or not 1 <= body.count <= 50 or not body.truck.strip():
-        bad(ValueError("truck, kind (load/unload) and a count of 1-50 are required"))
+    names = [t for t in (body.trucks or [body.truck]) if t and t.strip()]
+    if body.kind not in ("load", "unload") or not 1 <= body.count <= 50 or not names:
+        bad(ValueError("truck(s), kind (load/unload) and a count of 1-50 are required"))
     sh = conn.execute("SELECT id FROM shifts WHERE id = ? AND deleted = 0", (body.shift_id,)).fetchone() \
         if body.shift_id else reports.open_shift(conn)
     if not sh:
         bad(ValueError("no running shift — start one first"))
-    known = reg.find("truck", body.truck)
-    truck = known.code if known else body.truck.strip().upper()
+    trucks = list(dict.fromkeys((k.code if (k := reg.find("truck", t)) else t.strip().upper()) for t in names))
     site = None
     if body.site and body.site.strip():
         s_item = reg.find("site", body.site)
         if not s_item:
             bad(ValueError(f"unknown site {body.site}"))
         site = s_item.code
+    entries = []
     with core.tx(conn):
-        cur = conn.execute("INSERT INTO manual_counts (shift_id, truck, kind, count, site, note, user_id, created_at) "
-                           "VALUES (?,?,?,?,?,?,?,?)",
-                           (sh["id"], truck, body.kind, body.count, site, body.note.strip(), user["id"], core.stamp()))
-        entry = {**dict(conn.execute("SELECT * FROM manual_counts WHERE id = ?", (cur.lastrowid,)).fetchone()),
-                 "user": user["name"]}
-        core.audit(conn, user["id"], "create", "manual", cur.lastrowid, after=entry)
-        core.enqueue(conn, "manual", {"action": "add", "entry": entry})
-    return entry
+        for truck in trucks:  # one entry per truck: each adds on top, each removable on its own
+            cur = conn.execute("INSERT INTO manual_counts (shift_id, truck, kind, count, site, note, user_id, created_at) "
+                               "VALUES (?,?,?,?,?,?,?,?)",
+                               (sh["id"], truck, body.kind, body.count, site, body.note.strip(), user["id"], core.stamp()))
+            entry = {**dict(conn.execute("SELECT * FROM manual_counts WHERE id = ?", (cur.lastrowid,)).fetchone()),
+                     "user": user["name"]}
+            core.audit(conn, user["id"], "create", "manual", cur.lastrowid, after=entry)
+            core.enqueue(conn, "manual", {"action": "add", "entry": entry})
+            entries.append(entry)
+    return entries[0] if len(entries) == 1 and not body.trucks else entries
 
 
 @app.delete("/api/manual/{entry_id}")
