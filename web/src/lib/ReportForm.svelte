@@ -7,7 +7,8 @@
   import { api, localInput, time } from './api.js'
 
   // report = existing report when editing; null composes a new one
-  let { registry, report = null, me = null, onDone = () => {} } = $props()
+  // tick: bumps when anyone changes data, so warnings are re-checked live
+  let { registry, report = null, me = null, tick = 0, onDone = () => {} } = $props()
 
   // Seeded once from props; the parent re-mounts ({#key}) when the shift changes.
   const r0 = untrack(() => report)
@@ -36,6 +37,7 @@
   let timer
   $effect(() => {
     const d = draft
+    tick
     clearTimeout(timer)
     if (!ready) { warnings = []; newEntries = []; return }
     timer = setTimeout(async () => {

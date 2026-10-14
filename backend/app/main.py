@@ -8,7 +8,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -113,6 +114,38 @@ def update_me(body: ProfileIn, user=Depends(current_user), conn=Depends(get_conn
         conn.execute("UPDATE users SET name = ?, phone = ? WHERE id = ?", (name, phone, user["id"]))
         core.audit(conn, user["id"], "update", "user", user["id"], before=user, after={"name": name, "phone": phone})
     return auth.user_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone())
+
+
+# ── live updates ────────────────────────────────────────────────────────────
+
+def data_version(conn) -> int:
+    """Every change (reports, shifts, registry, users, settings — web or WhatsApp) writes an audit row."""
+    return conn.execute("SELECT COALESCE(MAX(id), 0) FROM audit").fetchone()[0]
+
+
+@app.get("/api/live")
+async def live(request: Request, user=Depends(member)):
+    """Server-sent events: pushes the data version whenever anything changes, so open pages refresh."""
+    async def stream():
+        conn = core.connect()
+        last, idle = None, 0
+        try:
+            for _ in range(600):  # ~10 min, then the browser reconnects (and re-checks the session)
+                if await request.is_disconnected():
+                    break
+                v = await asyncio.to_thread(data_version, conn)
+                if v != last:
+                    last, idle = v, 0
+                    yield f"data: {v}\n\n"
+                elif (idle := idle + 1) >= 15:
+                    idle = 0
+                    yield ": ping\n\n"  # keeps proxies from closing an idle stream
+                await asyncio.sleep(1)
+        finally:
+            conn.close()
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 # ── registry (dropdowns) ────────────────────────────────────────────────────

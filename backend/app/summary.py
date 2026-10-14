@@ -25,16 +25,25 @@ def _sites(d: dict) -> str:
     return ", ".join(f"{k} {v}" for k, v in sorted(d.items(), key=lambda kv: (-kv[1], kv[0])))
 
 
+# Order of the per-truck lines. A truck can be in "Loading" now and also have loads counted.
+POSITION_LINES = [("loading", "Loading"), ("loaded", "Loaded"), ("en_route", "En route"),
+                  ("at_unloading", "At unloading"), ("unloading", "Unloading"),
+                  ("at_loading", "At loading"), ("empty", "Empty")]
+
+
 def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
     inf = lambda n: f" ({n} inf)" if n else ""
     lines = [title,
              f"Loaded {c.loaded}{inf(c.loaded_inf)}" + (f": {_sites(c.loaded_by_site)}" if c.loaded_by_site else ""),
              f"Reached {c.reached}",
              f"Unloaded {c.unloaded}{inf(c.unloaded_inf)}" + (f": {_sites(c.unloaded_by_site)}" if c.unloaded_by_site else "")]
-    pos = " | ".join(f"{k.capitalize()} {','.join(v)}" for k in ("loading", "loaded", "unloading", "empty")
-                     if (v := c.position.get(k)))
-    if pos:
-        lines.append(pos)
+    loads = " ".join(f"{t}*{p['loads']}" for t, p in sorted(c.per_truck.items()) if p["loads"])
+    for key, label in POSITION_LINES:
+        if key == "loaded":
+            if loads:
+                lines.append(f"Loaded: {loads}")  # loads per truck this shift
+        elif v := c.position.get(key):
+            lines.append(f"{label}: {','.join(v)}")
     if notes and c.notes:
         lines.append("Inferred:")
         lines += c.notes

@@ -37,7 +37,7 @@ def test_report_flow_with_relay_and_flags(client):
     # Amit is about to post the same thing — the check warns him
     chk = amit.post("/api/reports/check", json={"trucks": ["A"], "verb": "LS", "site": "SOC",
                                                 "event_time": "2026-10-13T08:12"}).json()
-    assert chk["warnings"] == ["A LS already reported 08:10 Ravi"]
+    assert chk["warnings"] == ["A LS SOC already reported @08:10 ~Ravi"]
 
     # custom site → created on the fly
     chk = amit.post("/api/reports/check", json={"trucks": ["C"], "verb": "LS", "site": "Lal Ghadi"}).json()
@@ -61,7 +61,7 @@ def test_report_flow_with_relay_and_flags(client):
 
     b = ravi.get("/api/board").json()
     pos = {t["truck"]: t["position"] for t in b["trucks"]}
-    assert pos == {"A": "loaded", "B": "loaded", "C": "idle", "D": "idle"}
+    assert pos == {"A": "en_route", "B": "en_route", "C": "idle", "D": "idle"}
 
     assert boss.delete(f"/api/reports/{r['id']}").status_code == 200
     assert ravi.get("/api/reports").json() == []
@@ -272,3 +272,25 @@ def test_upgrade_leaves_existing_users_enabled(tmp_path, monkeypatch):
     assert len(rows) == 5 and all(r["disabled_until"] is None for r in rows)
     assert not any(auth.is_disabled(r) for r in rows)
     assert all(auth.user_dict(r)["disabled"] is False for r in rows)
+
+
+def test_data_version_moves_on_any_change(client):
+    from app.main import data_version
+    conn = client.app.state.conn
+    u = login(client, "u@x.org", "U")
+    v0 = data_version(conn)
+    u.post("/api/shifts/start", json={})
+    v1 = data_version(conn)
+    r = u.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"}).json()
+    v2 = data_version(conn)
+    u.delete(f"/api/reports/{r['id']}")
+    assert v0 < v1 < v2 < data_version(conn)
+
+
+def test_draft_in_same_minute_gets_the_duplicate_warning(client):
+    u = login(client, "u@x.org", "U")
+    u.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})
+    u.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC", "event_time": "2026-10-13T08:10"})
+    chk = u.post("/api/reports/check", json={"trucks": ["A"], "verb": "LS", "site": "SOC",
+                                              "event_time": "2026-10-13T08:10"}).json()
+    assert chk["warnings"] == ["A LS SOC already reported @08:10 ~U"]

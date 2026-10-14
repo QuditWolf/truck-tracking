@@ -124,7 +124,7 @@ def test_typed_fleet_message_becomes_report_with_ack(client, wa):
     assert rep["source"] == "wa" and rep["wa_msg_id"] == "M1" and rep["user"] == "Amit"
     assert inbound(client, FLEET, "A LS SOC", "M2") == "event"
     drain(client)
-    assert "! A LS already reported" in wa.texts(CONTROL)[-1]
+    assert "! A LS SOC already reported @" in wa.texts(CONTROL)[-1]
 
     # web edit of a WA report: replies to the operator's own message in the fleet group
     wa.boss.patch(f"/api/reports/{rep['id']}", json={"verb": "LO"})
@@ -198,7 +198,7 @@ def test_periodic_summary_only_when_changed(client, wa):
     wa.boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"})
     core.set_setting(conn, "_last_summary_at", "2000-01-01T00:00:00+05:30")
     drain(client)
-    assert len(summaries()) == 2 and "Loading A" in summaries()[-1]
+    assert len(summaries()) == 2 and "Loading: A" in summaries()[-1]
 
 
 def test_parse_strict():

@@ -13,8 +13,9 @@
   const timer = setInterval(load, 20000)
   onDestroy(() => clearInterval(timer))
 
-  const ORDER = ['loading', 'loaded', 'unloading', 'empty', 'done', 'idle']
-  const LABEL = { loading: 'Loading', loaded: 'Loaded', unloading: 'Unloading', empty: 'Empty', done: 'Done', idle: 'Idle' }
+  const ORDER = ['at_loading', 'loading', 'en_route', 'at_unloading', 'unloading', 'empty', 'done', 'idle']
+  const LABEL = { at_loading: 'At loading', loading: 'Loading', en_route: 'En route', at_unloading: 'At unloading',
+                  unloading: 'Unloading', empty: 'Empty', done: 'Done', idle: 'Idle' }
   const counts = $derived(
     board ? ORDER.map((k) => [k, board.trucks.filter((t) => t.position === k).length]).filter(([, n]) => n) : [],
   )
@@ -73,7 +74,9 @@
   }
   .truck::after { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--c); }
   .truck.loading { --c: var(--amber); }
-  .truck.loaded { --c: var(--blue); }
+  .truck.en_route { --c: var(--blue); }
+  .truck.at_loading { --c: color-mix(in srgb, var(--amber) 45%, var(--hair)); }
+  .truck.at_unloading { --c: color-mix(in srgb, var(--plum) 45%, var(--hair)); }
   .truck.unloading { --c: var(--plum); }
   .truck.empty, .truck.done { --c: var(--moss); }
   .truck.idle { --bg: transparent; box-shadow: inset 0 0 0 1px var(--hair-2); }

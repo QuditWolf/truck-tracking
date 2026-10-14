@@ -31,6 +31,22 @@
   }
   $effect(() => { if (me?.onboarded) refresh() })
 
+  // Live: the server pushes a version number whenever anything changes (anyone, web or WhatsApp).
+  let lastVersion = null
+  let pending
+  $effect(() => {
+    if (!me?.onboarded) return
+    const es = new EventSource('/api/live')
+    es.onmessage = (e) => {
+      if (lastVersion !== null && e.data !== lastVersion) {
+        clearTimeout(pending)
+        pending = setTimeout(refresh, 250) // coalesce bursts (multi-truck reports, imports)
+      }
+      lastVersion = e.data
+    }
+    return () => es.close()
+  })
+
   async function logout() {
     await api.post('/api/auth/logout')
     me = null

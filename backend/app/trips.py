@@ -175,7 +175,12 @@ def slot_of(e: Event, cur: Optional[Trip]) -> Optional[int]:
 
 
 def _fmt(e: Event) -> str:
-    return f"{e.time:%H:%M}" + (f" {e.user}" if e.user else "")
+    return f"@{e.time:%H:%M}"
+
+
+def _ref(e: Event, who: bool = False) -> str:
+    """'LS SOC @08:10' (+ ' ~Ravi') — same grammar as the WhatsApp lines."""
+    return f"{e.verb}{' ' + e.site if e.site else ''} @{e.time:%H:%M}" + (f" ~{e.user}" if who and e.user else "")
 
 
 def _missing(trip: Trip, upto: int, after: int) -> list[str]:
@@ -195,27 +200,26 @@ def _walk(truck: str, events: list[Event], carry: bool, flags) -> list[Trip]:
             continue
         if cur and s in cur.slots and abs(e.time - cur.slots[s].time) <= DUP_WINDOW:
             cur.duplicates.append(e)
-            flag(e, "duplicate", f"{truck} {e.verb} already reported {_fmt(cur.slots[s])}")
+            flag(e, "duplicate", f"{truck} {_ref(cur.slots[s], who=True).replace(' @', ' already reported @', 1)}")
             continue
         if cur is None or s <= cur.last:
             if cur:
                 cur.closed = "next"
                 gap = _missing(cur, 7, cur.last)
                 if gap:
-                    flag(e, "missing", f"{truck} {', '.join(gap)} not reported after "
-                                       f"{SLOT_NAMES[cur.last]} {_fmt(cur.slots[cur.last])}")
+                    flag(e, "missing", f"{truck} {', '.join(gap)} not reported after {_ref(cur.slots[cur.last])}")
             cur = Trip(truck, carry_in=(carry and not trips and s >= 4))
             trips.append(cur)
             gap = [] if cur.carry_in else _missing(cur, s, -1)
             if gap:
-                flag(e, "missing", f"{truck} {', '.join(gap)} not reported before {e.verb}")
+                flag(e, "missing", f"{truck} {', '.join(gap)} not reported before {_ref(e)}")
         elif s == 3 and 1 not in cur.slots and 2 not in cur.slots:
-            flag(e, "no_load", f"{truck} left loading site without LS/LO")
+            flag(e, "no_load", f"{truck} {_ref(e)} without LS/LO")
         else:
             gap = _missing(cur, s, cur.last)
             if gap:
                 flag(e, "missing", f"{truck} {', '.join(gap)} not reported "
-                                   f"between {SLOT_NAMES[cur.last]} and {e.verb}")
+                                   f"between {_ref(cur.slots[cur.last])} and {_ref(e)}")
         cur.slots[s] = e
 
     return trips
@@ -228,7 +232,8 @@ def analyze(events: list[Event], shifts: list[Shift]) -> Analysis:
     flags: dict[tuple[int, str], list[Flag]] = {}
 
     buckets: dict[tuple[Optional[int], str], list[Event]] = {}
-    for e in sorted(events, key=lambda e: (e.time, e.report_id)):
+    # same minute: order by report id, and a draft (negative id) is always the newest
+    for e in sorted(events, key=lambda e: (e.time, e.report_id if e.report_id >= 0 else float("inf"))):
         sh = next((s for s in shifts if s.contains(e.time)), None)
         if sh is None:
             flags.setdefault((e.report_id, e.truck), []).append(Flag("unshifted", "outside any shift"))
@@ -263,7 +268,8 @@ def analyze(events: list[Event], shifts: list[Shift]) -> Analysis:
 
 # ── summary over one segment ────────────────────────────────────────────────
 
-POSITION = {0: "loading", 1: "loading", 2: "loaded", 3: "loaded", 4: "loaded",
+# ENTER is "at the site", not loading/unloading yet
+POSITION = {0: "at_loading", 1: "loading", 2: "en_route", 3: "en_route", 4: "at_unloading",
             5: "unloading", 6: "empty", 7: "empty"}
 
 
@@ -276,7 +282,7 @@ class Counts:
     unloaded_inf: int = 0
     loaded_by_site: dict[str, int] = field(default_factory=dict)
     unloaded_by_site: dict[str, int] = field(default_factory=dict)
-    position: dict[str, list[str]] = field(default_factory=dict)  # loading|loaded|unloading|empty
+    position: dict[str, list[str]] = field(default_factory=dict)  # see POSITION
     per_truck: dict[str, dict[str, int]] = field(default_factory=dict)
     flags: int = 0
     notes: list[str] = field(default_factory=list)  # why each inferred count was inferred

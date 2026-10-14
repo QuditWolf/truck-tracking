@@ -15,7 +15,7 @@
 <div class="report">
   <div class="compose">
     {#key registry.shift?.id}
-      <ReportForm {registry} {me} onDone={sent} />
+      <ReportForm {registry} {me} {tick} onDone={sent} />
     {/key}
   </div>
   <aside class="live">

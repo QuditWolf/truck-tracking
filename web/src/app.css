@@ -119,7 +119,9 @@ button:disabled { cursor: default; }
 }
 .pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .pill.loading { background: var(--amber-soft); color: var(--amber); }
-.pill.loaded { background: var(--blue-soft); color: var(--blue); }
+.pill.loaded, .pill.en_route { background: var(--blue-soft); color: var(--blue); }
+.pill.at_loading { background: transparent; color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber-soft); }
+.pill.at_unloading { background: transparent; color: var(--plum); box-shadow: inset 0 0 0 1px var(--plum-soft); }
 .pill.unloading { background: var(--plum-soft); color: var(--plum); }
 .pill.empty, .pill.done { background: var(--moss-soft); color: var(--moss); }
 .pill.idle { background: transparent; color: var(--mute); box-shadow: inset 0 0 0 1px var(--hair); }
