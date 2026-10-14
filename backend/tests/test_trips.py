@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from app.trips import Event, Shift, analyze, count
 
 IST = timezone(timedelta(hours=5, minutes=30))
-SITES = {"SOC": "loading", "KN4": "loading", "DAIRY": "unloading", "BG": "unloading", "DEPOT": "depot", "NEW": None}
+SITES = {"SOC": "loading", "KN4": "loading", "SKP": "loading", "DAIRY": "unloading", "BG": "unloading", "DEPOT": "depot", "NEW": None}
 
 
 def t(hm: str, day: int = 13) -> datetime:
@@ -51,7 +51,7 @@ def test_same_verb_far_apart_is_new_trip():
     # first trip closed by second → load inferred, and it must have unloaded somewhere
     assert (c.loaded, c.loaded_inf, c.unloaded, c.unloaded_inf) == (1, 1, 1, 1)
     assert c.loaded_by_site == {"SOC": 1} and c.unloaded_by_site == {"?": 1}
-    assert "D LO, US, UO not reported after LS SOC @08:00" in texts(a, 2, "D")
+    assert "D LO not reported after LS SOC @08:00" in texts(a, 2, "D")
     assert c.notes == ["D load SOC inferred: LS @08:00, no LO", "D unload ? inferred: loaded again later"]
     assert c.position == {"loading": ["D"]}
 
@@ -172,3 +172,20 @@ def test_unload_counted_without_reported_load():
     # entered unloading site and started a new trip later → unload inferred
     _, c = run([ev(1, "F", "ENTER", "BG", "07:00"), ev(2, "F", "ENTER", "SOC", "09:00")])
     assert c.unloaded == 1 and c.unloaded_by_site == {"BG": 1}
+
+
+def test_real_shift_14_oct_bg_enter_left():
+    """From the live 14 Oct shift: BG visits are reported as ENTER + LEFT only."""
+    evs = [ev(13, "D", "ENTER", "BG", "15:38", "Mileeth"), ev(14, "D", "ENTER", "BG", "15:38", "Dheer"),
+           ev(16, "D", "LEFT", "BG", "15:51"), ev(15, "U", "ENTER", "BG", "15:48"), ev(17, "U", "LEFT", "BG", "15:57"),
+           ev(22, "U", "LS", "SKP", "16:14"), ev(30, "U", "ENTER", "BG", "17:07"), ev(32, "U", "LEFT", "BG", "17:08"),
+           ev(31, "A", "LS", "BG", "17:08"), ev(38, "A", "LO", "SKP", "17:30")]
+    sh = Shift(2, t("15:38", 14), None)
+    a = analyze([Event(e.report_id, e.truck, e.verb, e.site, e.site_type, e.time.replace(day=14), e.user) for e in evs], [sh])
+    c = count(a.segment(2), a.flags)
+    assert (c.unloaded, c.unloaded_inf) == (3, 0)  # D once, U twice — reported, not inferred
+    every = [f.text for fs in a.flags.values() for f in fs]
+    assert not any("US" in f or "UO" in f for f in every)  # no more US/UO noise
+    assert "D ENTER BG already reported @15:38 ~Mileeth" in every
+    assert "A LS at BG, an unloading site" in every
+    assert c.loaded_by_site == {"SKP": 2}  # U LS→BG (inferred), A LO at SKP

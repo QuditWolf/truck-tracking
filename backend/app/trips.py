@@ -26,7 +26,9 @@ from typing import Optional
 DUP_WINDOW = timedelta(minutes=20)
 
 SLOT_NAMES = ["ENTER", "LS", "LO", "LEFT", "ENTER", "US", "UO", "LEFT"]
-REQUIRED = (1, 2, 5, 6)  # LS LO US UO — the only gaps worth telling a human about
+# Only LS/LO gaps are worth telling a human about. At unloading sites crews report ENTER + LEFT,
+# so US/UO (like ENTER/LEFT at loading) are optional.
+REQUIRED = (1, 2)
 FIXED_SLOTS = {"LS": 1, "LO": 2, "US": 5, "UO": 6}
 
 
@@ -87,7 +89,7 @@ class Trip:
     @property
     def unloaded(self) -> Optional[str]:
         s = self.slots
-        if 6 in s:
+        if 6 in s or (4 in s and 7 in s):  # UO, or entered and left the unloading site
             return "yes"
         if 7 in s or (5 in s and self.closed):
             return "inf"
@@ -193,6 +195,8 @@ def _walk(truck: str, events: list[Event], carry: bool, flags) -> list[Trip]:
         flags.setdefault((e.report_id, truck), []).append(Flag(code, text, ref))
 
     for e in events:
+        if (e.verb in ("LS", "LO") and e.site_type == "unloading") or (e.verb in ("US", "UO") and e.site_type == "loading"):
+            flag(e, "site", f"{truck} {e.verb} at {e.site}, {'an unloading' if e.site_type == 'unloading' else 'a loading'} site")
         s = slot_of(e, cur)
         if s is None:
             continue
