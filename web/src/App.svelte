@@ -106,7 +106,7 @@
               {:else if page === 'mine'}
                 <Mine {registry} {me} {tick} onChange={refresh} />
               {:else if page === 'summary'}
-                <Summary {tick} />
+                <Summary {tick} {registry} {me} />
               {:else if page === 'admin' && me.is_admin}
                 <Admin onChange={refresh} />
               {/if}

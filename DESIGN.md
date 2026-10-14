@@ -86,6 +86,18 @@ Load attributed to the shift + loading site where it happened; unload likewise.
 - Events outside any shift are flagged; the web form warns before sending.
 - Shift open longer than `shift_stale_hours` → warning (not auto-closed).
 
+## Untracked trucks (manual counts)
+
+Any member can add "+N loads/unloads" for a truck nobody reported (Summary → Untracked trucks),
+per shift, optional site and note. Free-text trucks stay out of the registry. Counted into the
+shift totals and shown separately (`Loaded 16 (2 inf, 2 manual)`), listed under `Manual:`,
+relayed like reports, deletable by the author or an admin, audited.
+
+## Names in WhatsApp
+
+Signatures use the first name unless another user shares it; then the full name; if full names
+also clash, the last 4 phone digits are added.
+
 ## Summaries
 
 - WhatsApp (compact): loaded per site, reached, unloaded per site, truck positions, inferred notes.

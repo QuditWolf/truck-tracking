@@ -314,3 +314,32 @@ def test_old_fleet_mode_setting_is_migrated(tmp_path, monkeypatch):
         c.init_db(conn)
         assert c.setting(conn, "summary_fleet") == expect and c.setting(conn, "notice_fleet") == expect
         assert c.setting(conn, "summary_control") == "1" and c.setting(conn, "notice_control") == "1"
+
+
+def test_manual_count_relayed(client, wa):
+    wa.boss.post("/api/shifts/start", json={"site": "SOC"})
+    m = wa.boss.post("/api/manual", json={"truck": "PB10", "kind": "load", "count": 2, "site": "SOC", "note": "contractor"}).json()
+    wa.boss.delete(f"/api/manual/{m['id']}")
+    drain(client)
+    fleet = wa.texts(FLEET)
+    assert "PB10 +2 loads SOC (manual)\n- contractor\n~Boss" in fleet
+    assert "~PB10 +2 loads SOC (manual)~\ndeleted ~Boss" in fleet
+
+
+def test_signature_uses_full_name_only_when_first_names_clash(client, wa):
+    from app.relay import who
+    conn = client.app.state.conn
+    login(client, "r1@x.org", "Ravi Kumar", phone="9876500001")
+    assert who(conn, "Ravi Kumar") == "Ravi"
+    login(client, "r2@x.org", "Ravi Sharma", phone="9876500002")
+    assert who(conn, "Ravi Kumar") == "Ravi Kumar" and who(conn, "Ravi Sharma") == "Ravi Sharma"
+    assert who(conn, "Boss Man") == "Boss"
+    login(client, "r3@x.org", "Ravi Kumar", phone="9876503210")
+    assert who(conn, "Ravi Kumar") in ("Ravi Kumar (0001)", "Ravi Kumar (3210)")
+
+    r = login(client, "r2@x.org", None)  # existing Ravi Sharma
+    r.post("/api/shifts/start", json={})
+    r.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"})
+    drain(client)
+    assert wa.texts(FLEET)[-1].endswith("~Ravi Sharma")
+    assert r.get("/api/me").json()["signature"] == "Ravi Sharma"

@@ -101,8 +101,8 @@ def logout(response: Response):
 
 
 @app.get("/api/me")
-def me(user=Depends(current_user)):
-    return user
+def me(user=Depends(current_user), conn=Depends(get_conn)):
+    return {**user, "signature": relay.who(conn, user["name"] or "")}
 
 
 @app.put("/api/me")
@@ -331,6 +331,58 @@ def summary_shift(shift_id: Optional[int] = None, user=Depends(member), conn=Dep
 @app.get("/api/board")
 def get_board(user=Depends(member), conn=Depends(get_conn)):
     return summary.board(conn)
+
+
+class ManualIn(BaseModel):
+    truck: str
+    kind: str  # load | unload
+    count: int = 1
+    site: Optional[str] = None
+    note: str = ""
+    shift_id: Optional[int] = None  # default: the open shift
+
+
+@app.post("/api/manual")
+def add_manual(body: ManualIn, user=Depends(member), conn=Depends(get_conn)):
+    """Any member: count loads/unloads of a truck nobody reported (untracked trucks)."""
+    reg = registry.Registry(conn)
+    if body.kind not in ("load", "unload") or not 1 <= body.count <= 50 or not body.truck.strip():
+        bad(ValueError("truck, kind (load/unload) and a count of 1-50 are required"))
+    sh = conn.execute("SELECT id FROM shifts WHERE id = ? AND deleted = 0", (body.shift_id,)).fetchone() \
+        if body.shift_id else reports.open_shift(conn)
+    if not sh:
+        bad(ValueError("no running shift — start one first"))
+    known = reg.find("truck", body.truck)
+    truck = known.code if known else body.truck.strip().upper()
+    site = None
+    if body.site and body.site.strip():
+        s_item = reg.find("site", body.site)
+        if not s_item:
+            bad(ValueError(f"unknown site {body.site}"))
+        site = s_item.code
+    with core.tx(conn):
+        cur = conn.execute("INSERT INTO manual_counts (shift_id, truck, kind, count, site, note, user_id, created_at) "
+                           "VALUES (?,?,?,?,?,?,?,?)",
+                           (sh["id"], truck, body.kind, body.count, site, body.note.strip(), user["id"], core.stamp()))
+        entry = {**dict(conn.execute("SELECT * FROM manual_counts WHERE id = ?", (cur.lastrowid,)).fetchone()),
+                 "user": user["name"]}
+        core.audit(conn, user["id"], "create", "manual", cur.lastrowid, after=entry)
+        core.enqueue(conn, "manual", {"action": "add", "entry": entry})
+    return entry
+
+
+@app.delete("/api/manual/{entry_id}")
+def delete_manual(entry_id: int, user=Depends(member), conn=Depends(get_conn)):
+    row = conn.execute("SELECT * FROM manual_counts WHERE id = ? AND deleted = 0", (entry_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "not found")
+    if row["user_id"] != user["id"] and not user["is_admin"]:
+        raise HTTPException(403, "not your entry")
+    with core.tx(conn):
+        conn.execute("UPDATE manual_counts SET deleted = 1 WHERE id = ?", (entry_id,))
+        core.audit(conn, user["id"], "delete", "manual", entry_id, before=dict(row))
+        core.enqueue(conn, "manual", {"action": "delete", "entry": {**dict(row), "user": user["name"]}})
+    return {"ok": True}
 
 
 @app.get("/api/summary/range")

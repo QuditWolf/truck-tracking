@@ -60,14 +60,31 @@ def first_name(name: str) -> str:
     return (name or "").split(" ")[0]
 
 
-def _short(r: dict) -> dict:
-    return {**r, "user": first_name(r.get("user", ""))}
+def who(conn, name: str) -> str:
+    """Signature name: first name if no other user shares it; else full name; else full name + phone tail."""
+    name = (name or "").strip()
+    if not name:
+        return ""
+    first = first_name(name).lower()
+    rows = conn.execute("SELECT name, phone FROM users WHERE name IS NOT NULL").fetchall()
+    if sum(1 for r in rows if first_name(r["name"]).lower() == first) <= 1:
+        return first_name(name)
+    same = [r for r in rows if r["name"].strip().lower() == name.lower()]
+    if len(same) <= 1:
+        return name
+    phone = next((r["phone"] for r in same if r["phone"]), "") or ""
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    return f"{name} ({digits[-4:]})" if digits else name
+
+
+def _short(conn, r: dict) -> dict:
+    return {**r, "user": who(conn, r.get("user", ""))}
 
 
 def shift_text(conn, payload: dict) -> str:
-    sh, who, action = payload["shift"], first_name(payload.get("user", "")), payload["action"]
+    sh, name, action = payload["shift"], who(conn, payload.get("user", "")), payload["action"]
     at = sh["started_at"] if action == "start" else sh["ended_at"]
-    return wa.shift_line(action, at, sh.get("default_site") or "", who)
+    return wa.shift_line(action, at, sh.get("default_site") or "", name)
 
 
 def messages_for(conn, kind: str, payload: dict) -> list[tuple]:
@@ -80,11 +97,11 @@ def messages_for(conn, kind: str, payload: dict) -> list[tuple]:
 
 def _messages_for(conn, kind: str, payload: dict) -> list[tuple]:
     if kind == "report":
-        r = _short(payload["report"])
+        r = _short(conn, payload["report"])
         return [(j, wa.line(r), "report", r["id"], None) for j in targets(conn, "relay")]
     if kind in ("edit", "delete"):
-        r = _short(payload["after"] if kind == "edit" else payload["report"])
-        text = wa.edit_line(_short(payload["before"]), r) if kind == "edit" else wa.delete_line(r)
+        r = _short(conn, payload["after"] if kind == "edit" else payload["report"])
+        text = wa.edit_line(_short(conn, payload["before"]), r) if kind == "edit" else wa.delete_line(r)
         jids = _uniq(targets(conn, "relay") + [j for j in (setting(conn, "fleet_jid"), setting(conn, "control_jid"))
                                             if original(conn, r["id"], j)])
         return [(j, text, kind, r["id"], original(conn, r["id"], j)) for j in jids]
@@ -95,6 +112,13 @@ def _messages_for(conn, kind: str, payload: dict) -> list[tuple]:
             if s:
                 out += [(j, s["text"], "summary", None, None) for j in targets(conn, "summary")]
         return out
+    if kind == "manual":
+        m = payload["entry"]
+        line = summary.manual_text(m)
+        name = who(conn, m.get("user", ""))
+        text = wa.message(line, name, m.get("note", "")) if payload["action"] == "add" else \
+            f"~{line}~\ndeleted" + (f" ~{name}" if name else "")
+        return [(j, text, "manual", None, None) for j in targets(conn, "relay")]
     if kind == "notice":
         as_ = payload.get("as", "ack")
         jids = payload.get("jids") or targets(conn, "summary" if as_ == "summary" else "notice")

@@ -10,7 +10,7 @@ from . import core, registry
 
 SITES = [
     ("DAIRY", "Dairy", "unloading", []),
-    ("BG", "Bhandara Ground", "depot", ["Bhandaagar", "Bhandaagar Ground", "Bandaagar", "Bandaagar Ground"]),
+    ("BG", "Bhandara Ground", "unloading", ["Bhandaagar", "Bhandaagar Ground", "Bandaagar", "Bandaagar Ground"]),
     ("KN4", "Kua No. 4", "loading", ["Kua No 4"]),
     ("SOC", "SOC", "loading", []),
     ("TN", "Tannery", "loading", []),

@@ -135,7 +135,7 @@ def test_seed_sites_idempotent(client):
     seed.seed(conn)
     u = login(client, "u@x.org", "U")
     sites = {s["code"]: s for s in u.get("/api/registry").json()["site"]}
-    assert len(sites) == 14 and sites["SKP"]["aliases"] == ["SDP"] and sites["BG"]["site_type"] == "depot"
+    assert len(sites) == 14 and sites["SKP"]["aliases"] == ["SDP"] and sites["BG"]["site_type"] == "unloading"
     assert [t["code"] for t in u.get("/api/registry").json()["truck"]] == ["A", "B", "C", "D", "E"]
     u.post("/api/shifts/start", json={})
     assert u.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "lal jameen"}).json()["site"] == "LJ"
@@ -324,3 +324,33 @@ def test_check_returns_who_and_when_for_duplicates(client):
     u.post("/api/reports", json={"trucks": ["C"], "verb": "LS", "site": "SOC", "event_time": "2026-10-13T08:30"})
     assert u.post("/api/reports/check", json={"trucks": ["C"], "verb": "LO", "site": "SOC",
                                                "event_time": "2026-10-13T09:00"}).json()["warnings"] == []
+
+
+def test_manual_counts_for_untracked_trucks(client):
+    boss = login(client, "boss@x.org", "Boss")
+    seed(boss)
+    ravi = login(client, "ravi@x.org", "Ravi")
+    assert ravi.post("/api/manual", json={"truck": "X1", "kind": "load", "count": 2}).status_code == 400  # no shift
+    boss.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})
+    boss.post("/api/reports", json={"trucks": ["A"], "verb": "LO", "site": "SOC", "event_time": "2026-10-13T07:00"})
+    m = ravi.post("/api/manual", json={"truck": "pb10 xy 1234", "kind": "load", "count": 2, "site": "soc",
+                                       "note": "contractor"}).json()
+    assert m["truck"] == "PB10 XY 1234" and m["site"] == "SOC"
+    ravi.post("/api/manual", json={"truck": "a", "kind": "unload", "count": 1, "site": "DAIRY"})  # known truck → code
+    s = ravi.get("/api/summary/shift").json()
+    c = s["counts"]
+    assert (c["loaded"], c["loaded_manual"], c["unloaded"], c["unloaded_manual"]) == (3, 2, 1, 1)
+    assert c["loaded_by_site"] == {"SOC": 3} and c["per_truck"]["A"]["unloads"] == 1
+    assert "Loaded 3 (2 manual): SOC 3" in s["text"] and "Loaded: A*1 PB10 XY 1234*2" in s["text"]
+    assert "Manual:\nPB10 XY 1234 +2 loads SOC (manual): contractor ~Ravi" in s["text"]
+    assert len(s["manual"]) == 2
+    day = ravi.get("/api/summary/range?start=2026-10-13").json()["counts"]
+    assert day["loaded_manual"] == 2
+
+    # only the author or an admin removes it
+    amit = login(client, "amit@x.org", "Amit")
+    assert amit.delete(f"/api/manual/{m['id']}").status_code == 403
+    assert ravi.delete(f"/api/manual/{m['id']}").status_code == 200
+    assert ravi.get("/api/summary/shift").json()["counts"]["loaded"] == 1
+    kinds = [r["kind"] for r in client.app.state.conn.execute("SELECT kind FROM outbox WHERE kind = 'manual'")]
+    assert len(kinds) == 3  # add, add, delete → relayed

@@ -280,15 +280,18 @@ POSITION = {0: "at_loading", 1: "loading", 2: "en_route", 3: "en_route", 4: "at_
 class Counts:
     loaded: int = 0
     loaded_inf: int = 0
+    loaded_manual: int = 0
     reached: int = 0
     unloaded: int = 0
     unloaded_inf: int = 0
+    unloaded_manual: int = 0
     loaded_by_site: dict[str, int] = field(default_factory=dict)
     unloaded_by_site: dict[str, int] = field(default_factory=dict)
     position: dict[str, list[str]] = field(default_factory=dict)  # see POSITION
     per_truck: dict[str, dict[str, int]] = field(default_factory=dict)
     flags: int = 0
     notes: list[str] = field(default_factory=list)  # why each inferred count was inferred
+    manual: list[str] = field(default_factory=list)  # hand-added counts for untracked trucks
 
 
 def count(seg: Segment, flags: dict[tuple[int, str], list[Flag]]) -> Counts:

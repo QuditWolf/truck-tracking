@@ -1,10 +1,11 @@
 <script>
   import Icon from '../lib/Icon.svelte'
+  import ManualCounts from '../lib/ManualCounts.svelte'
   import Stat from '../lib/Stat.svelte'
   import { api, dateTime, todayIST } from '../lib/api.js'
   import { toast } from '../lib/stores.svelte.js'
 
-  let { tick } = $props()
+  let { tick, registry, me } = $props()
 
   let mode = $state('shift')
   let shifts = $state([])
@@ -177,6 +178,10 @@
         </section>
       {/if}
 
+      {#if mode === 'shift' && data.shift_id}
+        <div class="wide"><ManualCounts shiftId={data.shift_id} entries={data.manual || []} {registry} {me} /></div>
+      {/if}
+
       {#if c.notes?.length || data.flags?.length}
         <section class="card wide">
           <div class="card-h"><h3>What was inferred, and why</h3></div>
@@ -255,6 +260,10 @@
 
   .notes { display: flex; flex-direction: column; gap: 6px; }
 
+  @media (max-width: 640px) {
+    .trip { grid-template-columns: repeat(4, auto); }  /* loading half / unloading half on two rows */
+    .slot { min-width: 0; }
+  }
   @media (max-width: 1000px) {
     .grid { grid-template-columns: minmax(0, 1fr); }
     .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }

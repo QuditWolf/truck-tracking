@@ -100,6 +100,20 @@ CREATE TABLE IF NOT EXISTS wa_log (
 CREATE INDEX IF NOT EXISTS wa_log_report ON wa_log(report_id);
 CREATE INDEX IF NOT EXISTS wa_log_waid ON wa_log(wa_id);
 
+-- Loads/unloads of trucks nobody reported (untracked trucks), added by hand to a shift's summary.
+CREATE TABLE IF NOT EXISTS manual_counts (
+    id          INTEGER PRIMARY KEY,
+    shift_id    INTEGER NOT NULL REFERENCES shifts(id),
+    truck       TEXT NOT NULL,         -- registry code, or free text for trucks not in the registry
+    kind        TEXT NOT NULL CHECK (kind IN ('load', 'unload')),
+    count       INTEGER NOT NULL CHECK (count > 0),
+    site        TEXT,                  -- registry site code
+    note        TEXT NOT NULL DEFAULT '',
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    created_at  TEXT NOT NULL,
+    deleted     INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
