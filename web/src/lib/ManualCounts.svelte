@@ -89,7 +89,7 @@
       </div>
     </div>
     <Picker label="Site (optional)" options={registry.site} bind:value={site} variant="labelled" />
-    <input class="input" bind:value={note} placeholder="Note — optional (e.g. contractor truck)" maxlength="120" />
+    <input class="input" bind:value={note} placeholder="Note — optional" maxlength="120" />
     {#if preview.length}
       <div class="preview">
         <span class="eyebrow">Adds {count} {field} to each</span>
