@@ -20,7 +20,7 @@
   let error = $state('')
 
   function start() {
-    trucks = []; kind = 'load'; count = 1; site = registry.shift?.default_site || ''; note = ''; postFleet = true; error = ''
+    trucks = []; kind = 'load'; count = 1; site = registry.site.find((x) => x.code === registry.shift?.default_site && x.site_type === 'loading')?.code || ''; note = ''; postFleet = true; error = ''
     open = true
   }
 
@@ -39,6 +39,13 @@
   }
 
   const field = $derived(kind === 'load' ? 'loads' : 'unloads')
+  // loads happen at loading sites, unloads at unloading sites (untyped sites stay available)
+  const fits = (x) => (kind === 'load' ? x.site_type !== 'unloading' : x.site_type !== 'loading')
+  const siteOptions = $derived(registry.site.filter(fits))
+  $effect(() => {
+    const chosen = registry.site.find((x) => x.code === site)
+    if (chosen && !fits(chosen)) site = ''
+  })
   const preview = $derived(trucks.map((t) => {
     const before = perTruck[t]?.[field] || 0
     return { t, before, after: before + count }
@@ -89,7 +96,7 @@
         <button type="button" class="btn quiet sm icon" onclick={() => (count = Math.min(50, count + 1))} aria-label="More">+</button>
       </div>
     </div>
-    <Picker label="Site (optional)" options={registry.site} bind:value={site} variant="labelled" />
+    <Picker label="Site (optional)" options={siteOptions} bind:value={site} variant="labelled" />
     <input class="input" bind:value={note} placeholder="Note — optional" maxlength="120" />
     {#if me.is_admin}
       <label class="check"><input type="checkbox" checked={!postFleet} onchange={(e) => (postFleet = !e.target.checked)} /> Don't send to fleet group</label>
