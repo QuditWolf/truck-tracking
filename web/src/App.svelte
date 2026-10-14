@@ -11,6 +11,10 @@
   import Onboard from './pages/Onboard.svelte'
   import Report from './pages/Report.svelte'
   import Summary from './pages/Summary.svelte'
+  import Supervisor from './pages/Supervisor.svelte'
+
+  // /s/<token>: supervisor view, no login
+  const supervisorToken = location.pathname.startsWith('/s/') ? location.pathname.slice(3).split('/')[0] : ''
 
   let config = $state(null)
   let me = $state(null)
@@ -65,7 +69,9 @@
   const initials = $derived((me?.name || me?.email || '?').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase())
 </script>
 
-{#if !config}
+{#if supervisorToken}
+  <Supervisor token={supervisorToken} />
+{:else if !config}
   <div class="splash"><span class="mark">DB</span></div>
 {:else if !me}
   <Login {config} onLogin={(u) => (me = u)} />

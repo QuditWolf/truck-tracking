@@ -429,3 +429,68 @@ def test_merged_trolleys_count_as_one(client):
     assert s["remarks"][0]["trucks"] == "A"
     assert boss.get("/api/feed").json()[0]["trucks"] == ["A"]  # "A,UP80" report collapses to A
     assert "Empty" not in s["text"]
+
+
+def test_pinki_merged_into_f_counts_under_f(client):
+    boss = login(client, "boss@x.org", "Boss")
+    for code, t in (("SKP", "loading"), ("BG", "unloading")):
+        boss.post("/api/admin/registry", json={"kind": "site", "code": code, "site_type": t})
+    boss.post("/api/admin/registry", json={"kind": "truck", "code": "F"})
+    boss.post("/api/shifts/start", json={"at": "2026-10-14T15:38"})
+    boss.post("/api/reports", json={"trucks": ["F"], "verb": "LS", "site": "SKP", "event_time": "2026-10-14T16:46"})
+    boss.post("/api/reports", json={"trucks": ["F"], "verb": "ENTER", "site": "BG", "event_time": "2026-10-14T17:31"})
+    boss.post("/api/reports", json={"trucks": ["F"], "verb": "LEFT", "site": "BG", "event_time": "2026-10-14T17:37"})
+    boss.post("/api/reports", json={"trucks": ["PINKI - NO.06"], "verb": "ENTER", "site": "BG", "event_time": "2026-10-14T17:17"})
+    boss.post("/api/reports", json={"trucks": ["PINKI - NO.06"], "verb": "LEFT", "site": "BG", "event_time": "2026-10-14T17:17"})
+    boss.post("/api/manual", json={"trucks": ["PINKI - NO.06"], "kind": "load", "count": 1, "site": "SKP"})
+    before = boss.get("/api/summary/shift").json()["text"]
+    assert "PINKI - NO.06*1" in before
+    ids = {(i["kind"], i["code"]): i["id"] for i in boss.get("/api/admin/registry").json()}
+    assert boss.post(f"/api/admin/registry/{ids[('truck', 'PINKI - NO.06')]}/merge", json={"into": ids[("truck", "F")]}).status_code == 200
+    s = boss.get("/api/summary/shift").json()
+    assert "PINKI" not in s["text"], s["text"]
+    assert set(s["counts"]["per_truck"]) == {"F"}
+    print(s["text"])
+
+
+def test_api_keys_read_only(client):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    boss = login(client, "boss@x.org", "Boss")
+    boss.post("/api/shifts/start", json={})
+    boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"})
+    k = boss.post("/api/admin/keys", json={"name": "claude"}).json()
+    assert k["key"].startswith("tt_")
+    anon = TestClient(app)
+    assert anon.get("/api/v1/summary/shift").status_code == 401
+    h = {"Authorization": f"Bearer {k['key']}"}
+    assert "Loading: A" in anon.get("/api/v1/summary/shift", headers=h).json()["text"]
+    reps = anon.get("/api/v1/reports", headers={"X-API-Key": k["key"]}).json()
+    assert reps[0]["trucks"] == ["A"] and "user_id" not in reps[0]
+    assert anon.get("/api/v1/board", headers=h).status_code == 200
+    # a key can't write or reach admin endpoints
+    assert anon.post("/api/reports", headers=h, json={"trucks": ["B"], "verb": "LS"}).status_code == 401
+    assert anon.get("/api/admin/users", headers=h).status_code == 401
+    keys = boss.get("/api/admin/keys").json()
+    assert keys[0]["last_used_at"] and "hash" not in keys[0] and "key" not in keys[0]
+    boss.delete(f"/api/admin/keys/{k['id']}")
+    assert anon.get("/api/v1/summary/shift", headers=h).status_code == 401
+
+
+def test_supervisor_link(client):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    boss = login(client, "boss@x.org", "Boss")
+    boss.post("/api/shifts/start", json={})
+    boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC", "remarks": "private note"})
+    anon = TestClient(app)
+    assert anon.get("/api/public/whatever/summary").status_code == 404  # off by default
+    t1 = boss.post("/api/admin/supervisor").json()["token"]
+    s = anon.get(f"/api/public/{t1}/summary").json()
+    assert "Loading: A" in s["text"] and "remarks" not in s
+    assert anon.get(f"/api/public/{t1}/board").status_code == 200
+    t2 = boss.post("/api/admin/supervisor").json()["token"]  # new link kills the old one
+    assert anon.get(f"/api/public/{t1}/summary").status_code == 404
+    assert anon.get(f"/api/public/{t2}/summary").status_code == 200
+    boss.delete("/api/admin/supervisor")
+    assert anon.get(f"/api/public/{t2}/summary").status_code == 404

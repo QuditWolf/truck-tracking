@@ -50,6 +50,19 @@ The open shift, reports and the WhatsApp session carry over a restart. Queued Wh
 younger than 30 min are still sent afterwards. Restore = stop the container, copy a backup over
 `data/paddy.db` (delete `paddy.db-wal` / `-shm`), start again.
 
+### Read-only API and supervisor link
+
+Admin → API & links:
+- **Supervisor link** `https://truck.qutrit.org/s/<secret>`: current shift summary + fleet board, no
+  sign-in, refreshes every 20 s. "New link" invalidates the old one; "Turn off" disables it.
+- **API keys** (read-only, shown once, revocable, last-used tracked):
+
+```bash
+curl -H "Authorization: Bearer tt_..." https://truck.qutrit.org/api/v1/summary/shift
+# also: /api/v1/summary/range?start=YYYY-MM-DD&end=..., /api/v1/reports?since=&until=,
+#       /api/v1/shifts, /api/v1/board, /api/v1/registry
+```
+
 ### Snapshot of a shift (read-only)
 
 ```bash

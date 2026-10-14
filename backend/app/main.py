@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, core, inbound, registry, relay, reports, summary, wa, wa_client
+from . import access, auth, core, inbound, registry, relay, reports, summary, wa, wa_client
 from .auth import admin, current_user, get_conn, member
 
 STATIC = Path(__file__).parent.parent.parent / "web" / "dist"
@@ -114,6 +114,72 @@ def update_me(body: ProfileIn, user=Depends(current_user), conn=Depends(get_conn
         conn.execute("UPDATE users SET name = ?, phone = ? WHERE id = ?", (name, phone, user["id"]))
         core.audit(conn, user["id"], "update", "user", user["id"], before=user, after={"name": name, "phone": phone})
     return auth.user_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone())
+
+
+# ── read-only API (/api/v1): API key or session ─────────────────────────────
+
+@app.get("/api/v1/summary/shift", tags=["read-only"])
+def v1_summary_shift(shift_id: Optional[int] = None, who=Depends(access.reader), conn=Depends(get_conn)):
+    """Shift summary (current/latest by default): WhatsApp text, counts incl. inferred/manual, trips, flags."""
+    return summary.shift_summary(conn, shift_id) or {"text": "No shifts yet."}
+
+
+@app.get("/api/v1/summary/range", tags=["read-only"])
+def v1_summary_range(start: Optional[str] = None, end: Optional[str] = None, who=Depends(access.reader),
+                     conn=Depends(get_conn)):
+    s = summary.to_date(start)
+    return summary.range_summary(conn, s, summary.to_date(end) if end else s)
+
+
+@app.get("/api/v1/reports", tags=["read-only"])
+def v1_reports(since: Optional[str] = None, until: Optional[str] = None, limit: int = 1000,
+               include_deleted: bool = False, who=Depends(access.reader), conn=Depends(get_conn)):
+    """Reports by event time (IST ISO), newest first, with live flags."""
+    q, args = "SELECT * FROM reports WHERE 1=1", []
+    if not include_deleted:
+        q += " AND deleted = 0"
+    if since:
+        q += " AND event_time >= ?"
+        args.append(core.iso(core.to_ist(since)))
+    if until:
+        q += " AND event_time < ?"
+        args.append(core.iso(core.to_ist(until)))
+    q += " ORDER BY event_time DESC, id DESC LIMIT ?"
+    args.append(min(limit, 5000))
+    reg = registry.Registry(conn)
+    items = [reports.report_dict(conn, reg, r) for r in conn.execute(q, args).fetchall()]
+    return [{k: v for k, v in r.items() if k != "user_id"} for r in _with_flags(conn, items)]
+
+
+@app.get("/api/v1/shifts", tags=["read-only"])
+def v1_shifts(limit: int = 100, who=Depends(access.reader), conn=Depends(get_conn)):
+    reg = registry.Registry(conn)
+    rows = conn.execute("SELECT * FROM shifts WHERE deleted = 0 ORDER BY started_at DESC LIMIT ?", (min(limit, 1000),))
+    return [reports.shift_dict(conn, reg, r) for r in rows.fetchall()]
+
+
+@app.get("/api/v1/board", tags=["read-only"])
+def v1_board(who=Depends(access.reader), conn=Depends(get_conn)):
+    return summary.board(conn)
+
+
+@app.get("/api/v1/registry", tags=["read-only"])
+def v1_registry(who=Depends(access.reader), conn=Depends(get_conn)):
+    reg = registry.Registry(conn)
+    return {"truck": reg.listing("truck"), "site": reg.listing("site"), "verb": reg.listing("verb")}
+
+
+# ── supervisor link (no login) ──────────────────────────────────────────────
+
+@app.get("/api/public/{token}/summary", include_in_schema=False)
+def public_summary(token: str, ok=Depends(access.supervisor), conn=Depends(get_conn)):
+    s = summary.shift_summary(conn) or {"text": "No shifts yet."}
+    return {k: v for k, v in s.items() if k not in ("manual", "remarks", "flags")}
+
+
+@app.get("/api/public/{token}/board", include_in_schema=False)
+def public_board(token: str, ok=Depends(access.supervisor), conn=Depends(get_conn)):
+    return summary.board(conn)
 
 
 # ── live updates ────────────────────────────────────────────────────────────
@@ -612,6 +678,51 @@ def admin_wa_summary(user=Depends(admin), conn=Depends(get_conn)):
     with core.tx(conn):
         core.enqueue(conn, "notice", {"text": s["text"], "as": "summary"})
     return {"ok": True}
+
+
+# ── admin: API keys, supervisor link ────────────────────────────────────────
+
+class KeyIn(BaseModel):
+    name: str
+
+
+@app.get("/api/admin/keys")
+def admin_keys(user=Depends(admin), conn=Depends(get_conn)):
+    rows = conn.execute("SELECT k.id, k.name, k.prefix, k.created_at, k.last_used_at, k.revoked, u.name AS by "
+                        "FROM api_keys k LEFT JOIN users u ON u.id = k.created_by ORDER BY k.id DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/admin/keys")
+def admin_key_create(body: KeyIn, user=Depends(admin), conn=Depends(get_conn)):
+    with core.tx(conn):
+        return access.create_key(conn, body.name, user["id"])
+
+
+@app.delete("/api/admin/keys/{key_id}")
+def admin_key_revoke(key_id: int, user=Depends(admin), conn=Depends(get_conn)):
+    with core.tx(conn):
+        conn.execute("UPDATE api_keys SET revoked = 1 WHERE id = ?", (key_id,))
+        core.audit(conn, user["id"], "revoke", "api_key", key_id)
+    return {"ok": True}
+
+
+@app.get("/api/admin/supervisor")
+def admin_supervisor(user=Depends(admin), conn=Depends(get_conn)):
+    return {"token": access.supervisor_token(conn)}
+
+
+@app.post("/api/admin/supervisor")
+def admin_supervisor_new(user=Depends(admin), conn=Depends(get_conn)):
+    with core.tx(conn):
+        return {"token": access.new_supervisor_token(conn, user["id"])}
+
+
+@app.delete("/api/admin/supervisor")
+def admin_supervisor_off(user=Depends(admin), conn=Depends(get_conn)):
+    with core.tx(conn):
+        access.disable_supervisor(conn, user["id"])
+    return {"token": ""}
 
 
 @app.get("/api/admin/settings")

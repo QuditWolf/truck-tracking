@@ -3,11 +3,12 @@
   import { api, time } from './api.js'
 
   // tick: bump to force a refresh (after a send)
-  let { tick = 0, columns = 'auto' } = $props()
+  // src: '/api/board' when signed in; the supervisor page passes its public URL
+  let { tick = 0, columns = 'auto', src = '/api/board' } = $props()
 
   let board = $state(null)
   async function load() {
-    try { board = await api.get('/api/board') } catch { /* keep last */ }
+    try { board = await api.get(src) } catch { /* keep last */ }
   }
   $effect(() => { tick; load() })
   const timer = setInterval(load, 20000)

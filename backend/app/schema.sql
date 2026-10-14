@@ -116,6 +116,18 @@ CREATE TABLE IF NOT EXISTS manual_counts (
     deleted     INTEGER NOT NULL DEFAULT 0
 );
 
+-- Read-only API keys for scripts / downstream apps. Only a hash is stored.
+CREATE TABLE IF NOT EXISTS api_keys (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    prefix      TEXT NOT NULL,          -- first characters, to recognise a key in the list
+    hash        TEXT NOT NULL UNIQUE,   -- sha256 of the key
+    created_by  INTEGER REFERENCES users(id),
+    created_at  TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked     INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

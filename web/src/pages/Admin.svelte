@@ -3,6 +3,7 @@
   import Modal from '../lib/Modal.svelte'
   import { api, dateTime, localInput } from '../lib/api.js'
   import { toast } from '../lib/stores.svelte.js'
+  import Access from './Access.svelte'
   import WhatsApp from './WhatsApp.svelte'
 
   let { onChange } = $props()
@@ -139,7 +140,7 @@
 <div class="admin">
   <div class="toolbar">
     <div class="seg">
-      {#each [['registry', 'Registry'], ['shifts', 'Shifts'], ['users', 'Users'], ['whatsapp', 'WhatsApp'], ['audit', 'Audit']] as [t, label]}
+      {#each [['registry', 'Registry'], ['shifts', 'Shifts'], ['users', 'Users'], ['whatsapp', 'WhatsApp'], ['access', 'API & links'], ['audit', 'Audit']] as [t, label]}
         <button class:on={tab === t} onclick={() => (tab = t)}>{label}</button>
       {/each}
     </div>
@@ -244,6 +245,8 @@
 
   {:else if tab === 'whatsapp'}
     <WhatsApp />
+  {:else if tab === 'access'}
+    <Access />
 
   {:else}
     <div class="card">
