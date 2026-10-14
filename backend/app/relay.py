@@ -116,8 +116,9 @@ def _messages_for(conn, kind: str, payload: dict) -> list[tuple]:
         m = payload["entry"]
         line = summary.manual_text(m)
         name = who(conn, m.get("user", ""))
-        text = wa.message(line, name, m.get("note", "")) if payload["action"] == "add" else \
-            f"~{line}~\ndeleted" + (f" ~{name}" if name else "")
+        note = "\n- ".join(x for x in ("manual add for earlier untracked truck", m.get("note", "")) if x)
+        text = wa.message(line, name, note) if payload["action"] == "add" else \
+            f"~{line}~\nmanual add removed" + (f" ~{name}" if name else "")
         return [(j, text, "manual", None, None) for j in targets(conn, "relay")]
     if kind == "notice":
         as_ = payload.get("as", "ack")

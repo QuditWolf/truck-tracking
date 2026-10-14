@@ -322,8 +322,8 @@ def test_manual_count_relayed(client, wa):
     wa.boss.delete(f"/api/manual/{m['id']}")
     drain(client)
     fleet = wa.texts(FLEET)
-    assert "PB10 +2 loads SOC (manual)\n- contractor\n~Boss" in fleet
-    assert "~PB10 +2 loads SOC (manual)~\ndeleted ~Boss" in fleet
+    assert "PB10 +2 loads SOC\n- manual add for earlier untracked truck\n- contractor\n~Boss" in fleet
+    assert "~PB10 +2 loads SOC~\nmanual add removed ~Boss" in fleet
 
 
 def test_signature_uses_full_name_only_when_first_names_clash(client, wa):

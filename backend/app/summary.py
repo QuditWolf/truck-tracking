@@ -100,7 +100,7 @@ def manual_entries(conn, shift_id: int) -> list[dict]:
 def manual_text(m: dict) -> str:
     what = f"+{m['count']} load{'s' if m['count'] > 1 else ''}" if m["kind"] == "load" else \
         f"+{m['count']} unload{'s' if m['count'] > 1 else ''}"
-    return " ".join(x for x in (m["truck"], what, m.get("site") or "", "(manual)") if x)
+    return " ".join(x for x in (m["truck"], what, m.get("site") or "") if x)
 
 
 def apply_manual(conn, shift_id: int, c: trips.Counts) -> list[dict]:
