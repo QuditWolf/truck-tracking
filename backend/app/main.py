@@ -195,10 +195,11 @@ def check_report(body: ReportIn, report_id: Optional[int] = None, user=Depends(m
     draft["trucks"] = [(reg.find("truck", t) or registry.Item(0, "", t, t, None, "", "", None, True, 0)).code
                        for t in draft["trucks"]]
     a = reports.analysis(conn, reg, draft=draft, exclude_id=report_id)
-    warnings = reports.flags_for(a, reports.DRAFT_ID, draft["trucks"])
+    details = reports.flag_details(a, reports.DRAFT_ID, draft["trucks"])
+    warnings = [d["text"] for d in details]
     new = [f"new {k}: {v}" for k, vals in (("truck", body.trucks), ("site", [body.site] if body.site else []),
                                            ("verb", [body.verb])) for v in vals if v and not reg.find(k, v)]
-    return {"warnings": warnings, "new_entries": new}
+    return {"warnings": warnings, "details": details, "new_entries": new}
 
 
 @app.post("/api/reports")

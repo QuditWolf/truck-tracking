@@ -55,6 +55,7 @@ class Shift:
 class Flag:
     code: str  # duplicate | missing | unshifted | no_load
     text: str
+    ref: Optional["Event"] = None  # the earlier report this is about (duplicate of / missing after)
 
 
 @dataclass
@@ -191,8 +192,8 @@ def _walk(truck: str, events: list[Event], carry: bool, flags) -> list[Trip]:
     trips: list[Trip] = []
     cur: Optional[Trip] = None
 
-    def flag(e: Event, code: str, text: str):
-        flags.setdefault((e.report_id, truck), []).append(Flag(code, text))
+    def flag(e: Event, code: str, text: str, ref: Optional[Event] = None):
+        flags.setdefault((e.report_id, truck), []).append(Flag(code, text, ref))
 
     for e in events:
         s = slot_of(e, cur)
@@ -200,14 +201,16 @@ def _walk(truck: str, events: list[Event], carry: bool, flags) -> list[Trip]:
             continue
         if cur and s in cur.slots and abs(e.time - cur.slots[s].time) <= DUP_WINDOW:
             cur.duplicates.append(e)
-            flag(e, "duplicate", f"{truck} {_ref(cur.slots[s], who=True).replace(' @', ' already reported @', 1)}")
+            flag(e, "duplicate", f"{truck} {_ref(cur.slots[s], who=True).replace(' @', ' already reported @', 1)}",
+                 cur.slots[s])
             continue
         if cur is None or s <= cur.last:
             if cur:
                 cur.closed = "next"
                 gap = _missing(cur, 7, cur.last)
                 if gap:
-                    flag(e, "missing", f"{truck} {', '.join(gap)} not reported after {_ref(cur.slots[cur.last])}")
+                    flag(e, "missing", f"{truck} {', '.join(gap)} not reported after {_ref(cur.slots[cur.last])}",
+                         cur.slots[cur.last])
             cur = Trip(truck, carry_in=(carry and not trips and s >= 4))
             trips.append(cur)
             gap = [] if cur.carry_in else _missing(cur, s, -1)
@@ -219,7 +222,7 @@ def _walk(truck: str, events: list[Event], carry: bool, flags) -> list[Trip]:
             gap = _missing(cur, s, cur.last)
             if gap:
                 flag(e, "missing", f"{truck} {', '.join(gap)} not reported "
-                                   f"between {_ref(cur.slots[cur.last])} and {_ref(e)}")
+                                   f"between {_ref(cur.slots[cur.last])} and {_ref(e)}", cur.slots[cur.last])
         cur.slots[s] = e
 
     return trips

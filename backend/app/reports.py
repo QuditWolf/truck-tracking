@@ -74,6 +74,19 @@ def analysis(conn, reg: Optional[Registry] = None, draft: Optional[dict] = None,
     return trips.analyze(events, load_shifts(conn))
 
 
+def flag_details(a: trips.Analysis, report_id: int, truck_codes: list[str]) -> list[dict]:
+    """Structured flags for the live form: code, text, truck and the earlier report it refers to."""
+    out, seen = [], set()
+    for t in truck_codes:
+        for f in a.flags.get((report_id, t), []):
+            if f.text in seen:
+                continue
+            seen.add(f.text)
+            ref = {"verb": f.ref.verb, "site": f.ref.site, "time": iso(f.ref.time), "user": f.ref.user} if f.ref else None
+            out.append({"code": f.code, "text": f.text, "truck": t, "ref": ref})
+    return out
+
+
 def flags_for(a: trips.Analysis, report_id: int, truck_codes: list[str]) -> list[str]:
     """Flag texts for a report, de-duplicated (multi-truck reports share e.g. 'outside any shift')."""
     return list(dict.fromkeys(f.text for t in truck_codes for f in a.flags.get((report_id, t), [])))

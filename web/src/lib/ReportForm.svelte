@@ -1,5 +1,5 @@
 <script>
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { slide } from 'svelte/transition'
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
@@ -34,21 +34,43 @@
   const ready = $derived(trucks.length > 0 && !!verb)
   const shownTime = $derived(draft.event_time ? time(draft.event_time) : time(new Date().toISOString()))
 
+  // Warnings are re-checked whenever the draft changes, whenever anyone changes data (tick, pushed
+  // live), and every 15 s as a fallback in case the live connection is down.
+  let poll = $state(0)
+  let now = $state(Date.now())
+  const timers = [setInterval(() => poll++, 15000), setInterval(() => (now = Date.now()), 20000)]
+  onDestroy(() => timers.forEach(clearInterval))
+
   let timer
+  let seq = 0
   $effect(() => {
     const d = draft
-    tick
+    tick; poll
     clearTimeout(timer)
     if (!ready) { warnings = []; newEntries = []; return }
     timer = setTimeout(async () => {
+      const mine = ++seq
       try {
         const r = await api.post(`/api/reports/check${r0 ? `?report_id=${r0.id}` : ''}`, d)
+        if (mine !== seq) return // a newer check is on its way
         // with no shift running the confirm dialog covers this
-        warnings = r.warnings.filter((w) => !(w === 'outside any shift' && !r0 && !shift))
+        warnings = r.details.filter((w) => !(w.code === 'unshifted' && !r0 && !shift))
         newEntries = r.new_entries
+        now = Date.now()
       } catch { /* advisory only */ }
     }, 220)
   })
+
+  function ago(iso) {
+    const min = Math.floor((now - new Date(iso).getTime()) / 60000)  // times are whole minutes: floor, not round
+    if (min < 1) return 'just now'
+    if (min < 60) return `${min} min ago`
+    return `${Math.floor(min / 60)}h ${min % 60}m ago`
+  }
+  const sayWarning = (w) => w.code === 'duplicate' && w.ref
+    ? `${w.truck} ${w.ref.verb}${w.ref.site ? ' ' + w.ref.site : ''} reported ${ago(w.ref.time)} by ${w.ref.user} (@${time(w.ref.time)})`
+    : w.text
+  const duplicate = $derived(warnings.some((w) => w.code === 'duplicate'))
 
   function submit() {
     if (!r0 && !shift) askShift = true
@@ -113,12 +135,12 @@
       {/if}
     </div>
     {#each newEntries as n (n)}<p class="notice info" transition:slide={{ duration: 160 }}>{n} — will be added to the list</p>{/each}
-    {#each warnings as w (w)}<p class="notice" transition:slide={{ duration: 160 }}><Icon name="warn" size={15} />{w}</p>{/each}
+    {#each warnings as w (w.text)}<p class="notice" transition:slide={{ duration: 160 }}><Icon name="warn" size={15} />{sayWarning(w)}</p>{/each}
     {#if error}<p class="notice err">{error}</p>{/if}
     <div class="dock-actions">
       {#if r0}<button type="button" class="btn quiet" onclick={() => onDone(null)}>Cancel</button>{/if}
       <button class="btn send" class:signal={!warnings.length} class:caution={warnings.length > 0} disabled={!ready || busy}>
-        {busy ? 'Sending…' : warnings.length ? (r0 ? 'Save anyway' : 'Send anyway') : r0 ? 'Save changes' : 'Send report'}
+        {busy ? 'Sending…' : warnings.length ? (r0 ? 'Save anyway' : duplicate ? 'Report again' : 'Send anyway') : r0 ? 'Save changes' : 'Send report'}
         {#if !busy}<Icon name="send" size={18} />{/if}
       </button>
     </div>

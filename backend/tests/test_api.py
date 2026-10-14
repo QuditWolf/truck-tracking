@@ -307,3 +307,20 @@ def test_deleted_ls_no_longer_loading(client):
     text = boss.get("/api/summary/shift").json()["text"]
     assert "Loading:" not in text and "At loading site: B" in text
     assert {t["truck"]: t["position"] for t in boss.get("/api/board").json()["trucks"]}["B"] == "at_loading"
+
+
+def test_check_returns_who_and_when_for_duplicates(client):
+    u = login(client, "u@x.org", "Ravi Kumar")
+    u.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})
+    u.post("/api/reports", json={"trucks": ["B"], "verb": "LS", "site": "SOC", "event_time": "2026-10-13T08:10"})
+    d = u.post("/api/reports/check", json={"trucks": ["B"], "verb": "LS", "site": "SOC",
+                                            "event_time": "2026-10-13T08:15"}).json()["details"]
+    assert d == [{"code": "duplicate", "text": "B LS SOC already reported @08:10 ~Ravi Kumar", "truck": "B",
+                  "ref": {"verb": "LS", "site": "SOC", "time": "2026-10-13T08:10:00+05:30", "user": "Ravi Kumar"}}]
+    # someone fills the gap → the missing warning on a pending LO draft disappears on the next check
+    m = u.post("/api/reports/check", json={"trucks": ["C"], "verb": "LO", "site": "SOC",
+                                            "event_time": "2026-10-13T09:00"}).json()["warnings"]
+    assert m == ["C LS not reported before LO SOC @09:00"]
+    u.post("/api/reports", json={"trucks": ["C"], "verb": "LS", "site": "SOC", "event_time": "2026-10-13T08:30"})
+    assert u.post("/api/reports/check", json={"trucks": ["C"], "verb": "LO", "site": "SOC",
+                                               "event_time": "2026-10-13T09:00"}).json()["warnings"] == []
