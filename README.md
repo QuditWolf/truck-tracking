@@ -50,6 +50,13 @@ The open shift, reports and the WhatsApp session carry over a restart. Queued Wh
 younger than 30 min are still sent afterwards. Restore = stop the container, copy a backup over
 `data/paddy.db` (delete `paddy.db-wal` / `-shm`), start again.
 
+### Snapshot of a shift (read-only)
+
+```bash
+docker compose exec app .venv/bin/python -m app.dump        # current shift: summary, inferences, flags, trips, events
+docker compose exec app .venv/bin/python -m app.dump last   # latest ended shift
+```
+
 ### WhatsApp
 
 Everything is set in **Admin → WhatsApp**: scan the QR with the phone that should send messages

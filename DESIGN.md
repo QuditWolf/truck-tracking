@@ -71,7 +71,7 @@ Counting per trip:
 
 | | reported | inferred when |
 |---|---|---|
-| loaded | LO | any unloading-phase slot; or LS and the trip closed (next trip / shift end); or trip starts at unloading with no carried load |
+| loaded | LO | LS followed by a later step, or LS still open when the trip closed. Never from unloading alone (add untracked loads by hand) |
 | reached | — | any slot ≥ ENTER@U |
 | unloaded | UO | LEFT@U; or US and trip closed; or loaded and the truck started a new trip |
 

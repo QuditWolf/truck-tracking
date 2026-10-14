@@ -97,10 +97,10 @@ def test_carry_over_between_shifts_counts_load_once():
     assert c2.notes == ["D load carried from previous shift"]
 
 
-def test_unload_without_any_load_report_infers_load():
+def test_unload_without_any_load_report_does_not_infer_load():
     _, c = run([ev(1, "D", "UO", "DAIRY", "09:00")])
-    assert (c.loaded, c.loaded_inf, c.unloaded) == (1, 1, 1)
-    assert c.loaded_by_site == {"?": 1}
+    assert (c.loaded, c.loaded_inf, c.unloaded) == (0, 0, 1)
+    assert c.loaded_by_site == {}
 
 
 def test_enter_left_without_loading_is_flagged_not_counted():
@@ -165,7 +165,7 @@ def test_summary_has_no_reached_line():
 def test_unload_counted_without_reported_load():
     # entered and left the unloading site, nothing else reported
     _, c = run([ev(1, "D", "ENTER", "BG", "07:00"), ev(2, "D", "LEFT", "BG", "07:40")])
-    assert (c.unloaded, c.unloaded_by_site, c.loaded, c.loaded_inf) == (1, {"BG": 1}, 1, 1)
+    assert (c.unloaded, c.unloaded_by_site, c.loaded, c.loaded_inf) == (1, {"BG": 1}, 0, 0)
     # US + UO only
     _, c = run([ev(1, "E", "US", "DAIRY", "07:00"), ev(2, "E", "UO", "DAIRY", "07:30")])
     assert (c.unloaded, c.unloaded_inf, c.unloaded_by_site) == (1, 0, {"DAIRY": 1})

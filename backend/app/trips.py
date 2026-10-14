@@ -78,8 +78,8 @@ class Trip:
             return "yes"
         if self.carry_in:
             return None
-        if any(k >= 4 for k in s):
-            return "inf"
+        # Only an LS implies a load (LS then later steps, or LS still open when the trip closed).
+        # Unloading alone never implies a load — untracked loads are added by hand.
         if 1 in s and (self.closed or self.last > 1):
             return "inf"
         return None
@@ -91,8 +91,8 @@ class Trip:
             return "yes"
         if 7 in s or (5 in s and self.closed):
             return "inf"
-        if self.closed == "next" and (self.loaded or self.carry_in):
-            return "inf"  # it went and loaded again, so it must have unloaded
+        if self.closed == "next" and (self.loaded or self.carry_in or self.last >= 4):
+            return "inf"  # loaded (or reached the unloading site), then started a new trip: it unloaded
         return None
 
     def notes(self) -> list[str]:
@@ -103,11 +103,8 @@ class Trip:
         if self.loaded == "inf":
             if 1 in s and self.last == 1:
                 why = f"LS {_fmt(s[1])}, no LO" + (" by shift end" if self.closed == "shift_end" else "")
-            elif 1 in s:
-                why = f"LS {_fmt(s[1])}, LO missing"
             else:
-                first = s[min(s)]
-                why = f"no load reported before {SLOT_NAMES[min(s)]} {_fmt(first)}"
+                why = f"LS {_fmt(s[1])}, LO missing"
             out.append(f"{tr} load {self.load_site or '?'} inferred: {why}")
         if self.unloaded == "inf":
             if 7 in s:
