@@ -129,6 +129,12 @@ def parse(text: str, reg: Registry, sent: datetime, default_site: Optional[str] 
     rest = toks[i + 1:] if verb else []
     site = reg.find("site", " ".join(rest)) if rest else None
 
+    # LS/LO only happen at loading sites, US/UO only at unloading sites: a mismatch is a mistake → ask
+    stype = getattr(site, "site_type", None) if site else None
+    if verb and site and ((verb.code in ("LS", "LO") and stype == "unloading")
+                          or (verb.code in ("US", "UO") and stype == "loading")):
+        site = None
+        rest = rest or ["?"]
     missing = []
     if not trucks:
         missing.append("truck")

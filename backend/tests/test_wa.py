@@ -403,3 +403,11 @@ def test_ambiguous_ten_thirty_at_night_is_pm():
     sent = datetime(2026, 10, 14, 22, 35, tzinfo=IST)
     assert f"{take_time(['10:30'], sent)[1]:%H:%M}" == "22:30"
     assert f"{take_time(['05:30'], sent)[1]:%H:%M}" == "05:30"
+
+
+def test_ls_at_unloading_site_is_asked_not_recorded(client, wa):
+    wa.boss.post("/api/shifts/start", json={"site": "SOC"})
+    assert inbound(client, FLEET, "A LS DAIRY", "M1") == "unparsed"
+    assert inbound(client, FLEET, "A US SOC", "M2") == "unparsed"
+    assert inbound(client, FLEET, "A ENTER DAIRY", "M3") == "event"  # ENTER/LEFT fine anywhere
+    assert inbound(client, FLEET, "A LS SOC", "M4") == "event"

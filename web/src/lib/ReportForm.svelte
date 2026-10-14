@@ -34,6 +34,16 @@
     event_time: when && when !== initialWhen ? when : r0 ? r0.event_time : null,
   })
   const ready = $derived(trucks.length > 0 && !!verb)
+
+  // LS/LO only at loading sites, US/UO only at unloading sites; ENTER/LEFT anywhere.
+  // Sites without a type yet stay available.
+  const fits = (x) => (['LS', 'LO'].includes(verb) ? x.site_type !== 'unloading'
+    : ['US', 'UO'].includes(verb) ? x.site_type !== 'loading' : true)
+  const siteOptions = $derived(registry.site.filter(fits))
+  $effect(() => {
+    const chosen = registry.site.find((x) => x.code === site)
+    if (chosen && !fits(chosen)) site = ''
+  })
   const shownTime = $derived(draft.event_time ? time(draft.event_time) : time(new Date().toISOString()))
 
   // Warnings are re-checked whenever the draft changes, whenever anyone changes data (tick, pushed
@@ -100,7 +110,7 @@
   <div class="fields">
     <Picker label="Truck" options={registry.truck} bind:value={trucks} multi />
     <Picker label="Event" options={registry.verb} bind:value={verb} variant="labelled" />
-    <Picker label="Site" options={registry.site} bind:value={site} variant="labelled" />
+    <Picker label="Site" options={siteOptions} bind:value={site} variant="labelled" />
 
     <div class="extras">
       <input class="input" bind:value={remarks} placeholder="Remarks — optional" maxlength="200" />
