@@ -3,6 +3,7 @@
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
   import Picker from './Picker.svelte'
+  import Toggle from './Toggle.svelte'
   import { api, time } from './api.js'
   import { toast } from './stores.svelte.js'
 
@@ -15,11 +16,12 @@
   let count = $state(1)
   let site = $state('')
   let note = $state('')
+  let postFleet = $state(true)
   let busy = $state(false)
   let error = $state('')
 
   function start() {
-    trucks = []; kind = 'load'; count = 1; site = registry.shift?.default_site || ''; note = ''; error = ''
+    trucks = []; kind = 'load'; count = 1; site = registry.shift?.default_site || ''; note = ''; postFleet = true; error = ''
     open = true
   }
 
@@ -27,7 +29,7 @@
     busy = true
     error = ''
     try {
-      await api.post('/api/manual', { trucks, kind, count, site: site || null, note, shift_id: shiftId })
+      await api.post('/api/manual', { trucks, kind, count, site: site || null, note, post_fleet: postFleet, shift_id: shiftId })
       toast(`${trucks.join(', ')} +${count} ${kind}${count > 1 ? 's' : ''} each`)
       open = false
     } catch (e) {
@@ -90,6 +92,9 @@
     </div>
     <Picker label="Site (optional)" options={registry.site} bind:value={site} variant="labelled" />
     <input class="input" bind:value={note} placeholder="Note — optional" maxlength="120" />
+    <Toggle checked={postFleet} label="Post in fleet group"
+      hint={postFleet ? 'Posted in the fleet group and the control group.' : 'Only the control group is told.'}
+      onchange={(v) => (postFleet = v)} />
     {#if preview.length}
       <div class="preview">
         <span class="eyebrow">Adds {count} {field} to each</span>

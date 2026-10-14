@@ -343,3 +343,16 @@ def test_signature_uses_full_name_only_when_first_names_clash(client, wa):
     drain(client)
     assert wa.texts(FLEET)[-1].endswith("~Ravi Sharma")
     assert r.get("/api/me").json()["signature"] == "Ravi Sharma"
+
+
+def test_manual_entry_control_always_fleet_optional(client, wa):
+    wa.boss.put("/api/admin/settings", json={"relay_control": "0"})  # control still gets manual entries
+    wa.boss.post("/api/shifts/start", json={"site": "SOC"})
+    quiet = wa.boss.post("/api/manual", json={"trucks": ["Q1"], "kind": "load", "count": 1, "post_fleet": False}).json()[0]
+    wa.boss.post("/api/manual", json={"trucks": ["Q2"], "kind": "load", "count": 1})
+    wa.boss.delete(f"/api/manual/{quiet['id']}")
+    drain(client)
+    fleet, control = wa.texts(FLEET), wa.texts(CONTROL)
+    assert any(t.startswith("Q1 +1 load") for t in control) and not any(t.startswith("Q1 +1 load") for t in fleet)
+    assert any("~Q1 +1 load" in t for t in control) and not any("~Q1 +1 load" in t for t in fleet)  # removal too
+    assert any(t.startswith("Q2 +1 load") for t in control) and any(t.startswith("Q2 +1 load") for t in fleet)

@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS manual_counts (
     count       INTEGER NOT NULL CHECK (count > 0),
     site        TEXT,                  -- registry site code
     note        TEXT NOT NULL DEFAULT '',
+    post_fleet  INTEGER NOT NULL DEFAULT 1, -- also relay to the fleet group (control always)
     user_id     INTEGER NOT NULL REFERENCES users(id),
     created_at  TEXT NOT NULL,
     deleted     INTEGER NOT NULL DEFAULT 0

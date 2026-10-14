@@ -340,6 +340,7 @@ class ManualIn(BaseModel):
     count: int = 1
     site: Optional[str] = None
     note: str = ""
+    post_fleet: bool = True  # control group always gets it; fleet group only if this is on
     shift_id: Optional[int] = None  # default: the open shift
 
 
@@ -364,9 +365,10 @@ def add_manual(body: ManualIn, user=Depends(member), conn=Depends(get_conn)):
     entries = []
     with core.tx(conn):
         for truck in trucks:  # one entry per truck: each adds on top, each removable on its own
-            cur = conn.execute("INSERT INTO manual_counts (shift_id, truck, kind, count, site, note, user_id, created_at) "
-                               "VALUES (?,?,?,?,?,?,?,?)",
-                               (sh["id"], truck, body.kind, body.count, site, body.note.strip(), user["id"], core.stamp()))
+            cur = conn.execute("INSERT INTO manual_counts (shift_id, truck, kind, count, site, note, post_fleet, user_id, "
+                               "created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                               (sh["id"], truck, body.kind, body.count, site, body.note.strip(), int(body.post_fleet),
+                                user["id"], core.stamp()))
             entry = {**dict(conn.execute("SELECT * FROM manual_counts WHERE id = ?", (cur.lastrowid,)).fetchone()),
                      "user": user["name"]}
             core.audit(conn, user["id"], "create", "manual", cur.lastrowid, after=entry)

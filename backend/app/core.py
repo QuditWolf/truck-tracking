@@ -79,6 +79,7 @@ MIGRATIONS = [
     ("registry", "notes", "TEXT NOT NULL DEFAULT ''"),
     ("outbox", "status", "TEXT NOT NULL DEFAULT 'pending'"),  # pending | sent | skipped | failed
     ("users", "disabled_until", "TEXT"),  # temporary disable: access returns after this IST time
+    ("manual_counts", "post_fleet", "INTEGER NOT NULL DEFAULT 1"),
 ]
 
 

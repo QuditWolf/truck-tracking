@@ -119,7 +119,9 @@ def _messages_for(conn, kind: str, payload: dict) -> list[tuple]:
         note = "\n- ".join(x for x in ("manual add for earlier untracked truck", m.get("note", "")) if x)
         text = wa.message(line, name, note) if payload["action"] == "add" else \
             f"~{line}~\nmanual add removed" + (f" ~{name}" if name else "")
-        return [(j, text, "manual", None, None) for j in targets(conn, "relay")]
+        # control always; fleet only if the entry asked for it (and fleet relays are on)
+        fleet = setting(conn, "fleet_jid") if m.get("post_fleet", 1) and flag(conn, "relay_fleet") else ""
+        return [(j, text, "manual", None, None) for j in _uniq([setting(conn, "control_jid"), fleet])]
     if kind == "notice":
         as_ = payload.get("as", "ack")
         jids = payload.get("jids") or targets(conn, "summary" if as_ == "summary" else "notice")
