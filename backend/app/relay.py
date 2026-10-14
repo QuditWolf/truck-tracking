@@ -37,6 +37,12 @@ def targets(conn, tier: str) -> list[str]:
                   setting(conn, "control_jid") if flag(conn, f"{tier}_control") else ""])
 
 
+def _relay_jids(conn, r: dict) -> list[str]:
+    """Relay targets for a report; an admin can keep a report out of the fleet group."""
+    jids = targets(conn, "relay")
+    return [j for j in jids if j != setting(conn, "fleet_jid")] if r.get("skip_fleet") else jids
+
+
 def send(conn, jid: str, text: str, kind: str, report_id=None, quote=None) -> str | None:
     wa_id = wa_client.send(jid, text, quote)
     conn.execute("INSERT INTO wa_log (at, direction, jid, wa_id, kind, report_id, text, from_me) "
@@ -98,12 +104,12 @@ def messages_for(conn, kind: str, payload: dict) -> list[tuple]:
 def _messages_for(conn, kind: str, payload: dict) -> list[tuple]:
     if kind == "report":
         r = _short(conn, payload["report"])
-        return [(j, wa.line(r), "report", r["id"], None) for j in targets(conn, "relay")]
+        return [(j, wa.line(r), "report", r["id"], None) for j in _relay_jids(conn, r)]
     if kind in ("edit", "delete"):
         r = _short(conn, payload["after"] if kind == "edit" else payload["report"])
         text = wa.edit_line(_short(conn, payload["before"]), r) if kind == "edit" else wa.delete_line(r)
-        jids = _uniq(targets(conn, "relay") + [j for j in (setting(conn, "fleet_jid"), setting(conn, "control_jid"))
-                                            if original(conn, r["id"], j)])
+        jids = _uniq(_relay_jids(conn, r) + [j for j in (setting(conn, "fleet_jid"), setting(conn, "control_jid"))
+                                             if original(conn, r["id"], j)])
         return [(j, text, kind, r["id"], original(conn, r["id"], j)) for j in jids]
     if kind == "shift":
         out = [(j, shift_text(conn, payload), "shift", None, None) for j in targets(conn, "notice")]

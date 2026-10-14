@@ -176,3 +176,7 @@ button:disabled { cursor: default; }
 }
 
 * { scrollbar-width: thin; scrollbar-color: var(--hair) transparent; }
+
+/* plain checkbox row */
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; user-select: none; }
+.check input { width: 17px; height: 17px; accent-color: var(--ink); margin: 0; }

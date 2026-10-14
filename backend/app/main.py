@@ -167,6 +167,7 @@ class ReportIn(BaseModel):
     remarks: str = ""
     event_time: Optional[str] = None  # IST; default now
     start_shift: bool = False  # no open shift: start one at the event time (user confirmed)
+    skip_fleet: bool = False  # admins only: don't relay this report to the fleet group
 
 
 class ReportPatch(BaseModel):
@@ -208,7 +209,8 @@ def create_report(body: ReportIn, user=Depends(member), conn=Depends(get_conn)):
         with core.tx(conn):
             if body.start_shift and not reports.open_shift(conn):
                 reports.start_shift(conn, user["id"], body.site, body.event_time or core.iso(core.now()))
-            r = reports.create_report(conn, body.model_dump(exclude={"start_shift"}), user["id"])
+            r = reports.create_report(conn, body.model_dump(exclude={"start_shift", "skip_fleet"}), user["id"],
+                                      skip_fleet=body.skip_fleet and user["is_admin"])
     except ValueError as e:
         bad(e)
     return _with_flags(conn, [r])[0]
@@ -366,7 +368,8 @@ def add_manual(body: ManualIn, user=Depends(member), conn=Depends(get_conn)):
         for truck in trucks:  # one entry per truck: each adds on top, each removable on its own
             cur = conn.execute("INSERT INTO manual_counts (shift_id, truck, kind, count, site, note, post_fleet, user_id, "
                                "created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                               (sh["id"], truck, body.kind, body.count, site, body.note.strip(), int(body.post_fleet),
+                               (sh["id"], truck, body.kind, body.count, site, body.note.strip(),
+                                int(body.post_fleet or not user["is_admin"]),  # only admins may skip fleet
                                 user["id"], core.stamp()))
             entry = {**dict(conn.execute("SELECT * FROM manual_counts WHERE id = ?", (cur.lastrowid,)).fetchone()),
                      "user": user["name"]}

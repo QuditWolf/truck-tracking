@@ -19,6 +19,7 @@
   const defaultSite = untrack(() => registry.site.find((x) => x.code === shift?.default_site && x.site_type === 'loading')?.code || '')
   let site = $state(r0 ? r0.site || '' : defaultSite)
   let remarks = $state(r0?.remarks || '')
+  let skipFleet = $state(false) // admins only: keep this report out of the fleet group
   let advanced = $state(false)
   let when = $state(r0 ? localInput(r0.event_time) : '')
   const initialWhen = untrack(() => when)
@@ -94,9 +95,9 @@
     busy = true
     error = ''
     try {
-      const body = { ...draft, ...(startShift ? { start_shift: true } : {}) }
+      const body = { ...draft, ...(startShift ? { start_shift: true } : {}), ...(skipFleet ? { skip_fleet: true } : {}) }
       const r = r0 ? await api.patch(`/api/reports/${r0.id}`, body) : await api.post('/api/reports', body)
-      if (!r0) { trucks = []; remarks = ''; when = ''; advanced = false }
+      if (!r0) { trucks = []; remarks = ''; when = ''; advanced = false; skipFleet = false }
       onDone(r, startShift)
     } catch (e) {
       error = e.message
@@ -121,6 +122,9 @@
         </button>
       {/if}
     </div>
+    {#if me?.is_admin && !r0}
+      <label class="check"><input type="checkbox" bind:checked={skipFleet} /> Don't send to fleet group</label>
+    {/if}
     {#if advanced || r0}
       <div class="when-row" transition:slide={{ duration: 180 }}>
         <label class="field grow">

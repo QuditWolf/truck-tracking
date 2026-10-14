@@ -411,3 +411,20 @@ def test_ls_at_unloading_site_is_asked_not_recorded(client, wa):
     assert inbound(client, FLEET, "A US SOC", "M2") == "unparsed"
     assert inbound(client, FLEET, "A ENTER DAIRY", "M3") == "event"  # ENTER/LEFT fine anywhere
     assert inbound(client, FLEET, "A LS SOC", "M4") == "event"
+
+
+def test_admin_can_keep_a_report_out_of_the_fleet_group(client, wa):
+    boss = wa.boss
+    boss.post("/api/shifts/start", json={"site": "SOC"})
+    r = boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC", "skip_fleet": True}).json()
+    boss.patch(f"/api/reports/{r['id']}", json={"verb": "LO"})
+    boss.delete(f"/api/reports/{r['id']}")
+    u = login(client, "u@x.org", "Ravi", phone="9876500123")
+    u.post("/api/reports", json={"trucks": ["B"], "verb": "LS", "site": "SOC", "skip_fleet": True})  # ignored: not admin
+    q = u.post("/api/manual", json={"trucks": ["Q"], "kind": "load", "count": 1, "post_fleet": False}).json()
+    drain(client)
+    fleet, control = wa.texts(FLEET), wa.texts(CONTROL)
+    assert not any(t.startswith("A ") or "~A " in t or t.startswith("~A") for t in fleet)  # create/edit/delete stay out
+    assert any(t.startswith("A LS SOC") for t in control) and any("~LS~ LO" in t for t in control)
+    assert any(t.startswith("B LS SOC") for t in fleet)  # non-admin skip ignored
+    assert any(t.startswith("Q +1 load") for t in fleet)  # non-admin can't skip fleet for manual either

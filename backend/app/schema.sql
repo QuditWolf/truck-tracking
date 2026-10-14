@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS reports (
     remarks     TEXT NOT NULL DEFAULT '',
     deleted     INTEGER NOT NULL DEFAULT 0,
     wa_msg_id   TEXT,                  -- WA message this report was relayed as / parsed from
+    skip_fleet  INTEGER NOT NULL DEFAULT 0,  -- admin chose: don't relay this report to the fleet group
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );

@@ -3,7 +3,6 @@
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
   import Picker from './Picker.svelte'
-  import Toggle from './Toggle.svelte'
   import { api, time } from './api.js'
   import { toast } from './stores.svelte.js'
 
@@ -92,9 +91,9 @@
     </div>
     <Picker label="Site (optional)" options={registry.site} bind:value={site} variant="labelled" />
     <input class="input" bind:value={note} placeholder="Note — optional" maxlength="120" />
-    <Toggle checked={postFleet} label="Post in fleet group"
-      hint={postFleet ? 'Posted in the fleet group and the control group.' : 'Only the control group is told.'}
-      onchange={(v) => (postFleet = v)} />
+    {#if me.is_admin}
+      <label class="check"><input type="checkbox" checked={!postFleet} onchange={(e) => (postFleet = !e.target.checked)} /> Don't send to fleet group</label>
+    {/if}
     {#if preview.length}
       <div class="preview">
         <span class="eyebrow">Adds {count} {field} to each</span>

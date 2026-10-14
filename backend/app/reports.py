@@ -31,6 +31,7 @@ def report_dict(conn, reg: Registry, row) -> dict:
         "remarks": row["remarks"],
         "deleted": bool(row["deleted"]),
         "wa_msg_id": row["wa_msg_id"],
+        "skip_fleet": bool(row["skip_fleet"]) if "skip_fleet" in row.keys() else False,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -144,14 +145,15 @@ def _write_trucks(conn, reg: Registry, report_id: int, trucks: list[str]) -> Non
                      (report_id, reg.find("truck", code, active_only=False).id))
 
 
-def create_report(conn, data: dict, user_id: int, source: str = "web", wa_msg_id=None) -> dict:
+def create_report(conn, data: dict, user_id: int, source: str = "web", wa_msg_id=None,
+                  skip_fleet: bool = False) -> dict:
     reg = Registry(conn)
     n = normalize(conn, reg, data, user_id)
     ts = stamp()
     cur = conn.execute(
-        "INSERT INTO reports (user_id, source, verb_id, site_id, event_time, remarks, wa_msg_id, "
-        "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-        (user_id, source, n["verb_id"], n["site_id"], n["event_time"], n["remarks"], wa_msg_id, ts, ts),
+        "INSERT INTO reports (user_id, source, verb_id, site_id, event_time, remarks, wa_msg_id, skip_fleet, "
+        "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (user_id, source, n["verb_id"], n["site_id"], n["event_time"], n["remarks"], wa_msg_id, int(skip_fleet), ts, ts),
     )
     rid = cur.lastrowid
     _write_trucks(conn, reg, rid, n["trucks"])
