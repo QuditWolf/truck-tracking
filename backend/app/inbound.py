@@ -125,7 +125,8 @@ def fleet(conn, msg: dict) -> str:
     reg = Registry(conn)
     sent = datetime.fromtimestamp(msg.get("ts") or core.now().timestamp(), IST)
     sh = reports.open_shift(conn)
-    default_site = reg.canon(sh["default_site_id"]).code if sh and sh["default_site_id"] else None
+    d = reg.canon(sh["default_site_id"]) if sh and sh["default_site_id"] else None
+    default_site = d.code if d and d.site_type == "loading" else None  # never default LS/LO to an unloading site
     p = parse.parse(msg["text"], reg, sent, default_site)
 
     if p.ok:

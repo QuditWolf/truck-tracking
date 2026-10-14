@@ -356,3 +356,50 @@ def test_manual_entry_control_always_fleet_optional(client, wa):
     assert any(t.startswith("Q1 +1 load") for t in control) and not any(t.startswith("Q1 +1 load") for t in fleet)
     assert any("~Q1 +1 load" in t for t in control) and not any("~Q1 +1 load" in t for t in fleet)  # removal too
     assert any(t.startswith("Q2 +1 load") for t in control) and any(t.startswith("Q2 +1 load") for t in fleet)
+
+
+def test_real_free_text_messages_from_14_oct():
+    from datetime import datetime
+    from app.core import IST
+    from app.parse import parse
+
+    class Reg:
+        trucks = {"a": "A", "b": "B", "d": "D", "f": "F", "up26r3436": "UP26R3436"}
+        sites = {"skp": "SKP", "bg": "BG"}
+        verbs = {"ls": "LS", "lo": "LO", "left": "LEFT", "enter": "ENTER", "us": "US", "uo": "UO"}
+
+        def find(self, kind, text, active_only=True):
+            table = {"truck": self.trucks, "site": self.sites, "verb": self.verbs}[kind]
+            code = table.get(text.lower())
+            return type("I", (), {"code": code})() if code else None
+
+    at = lambda hm: datetime(2026, 10, 14, int(hm[:2]), int(hm[3:]), tzinfo=IST)
+    p = parse("D,UP26R3436 left skp loaded at 3:26", Reg(), at("15:27"))
+    assert p.ok and p.trucks == ["D", "UP26R3436"] and p.verb == "LEFT" and p.site == "SKP" and f"{p.time:%H:%M}" == "15:26"
+    p = parse("B F LS at 3:35", Reg(), at("15:36"), default_site="SKP")
+    assert p.ok and p.trucks == ["B", "F"] and p.site == "SKP" and f"{p.time:%H:%M}" == "15:35"
+    p = parse("A LS at 5:08pm", Reg(), at("17:09"), default_site="SKP")
+    assert p.ok and p.site == "SKP" and f"{p.time:%H:%M}" == "17:08"
+    p = parse("Trolley D LS at 16:05", Reg(), at("16:06"), default_site="SKP")
+    assert p.ok and p.trucks == ["D"] and f"{p.time:%H:%M}" == "16:05"
+    p = parse("D reached bg at 3:38pm", Reg(), at("15:39"))
+    assert p.ok and p.verb == "ENTER" and p.site == "BG" and f"{p.time:%H:%M}" == "15:38"
+    p = parse("B left for BG at 3:37", Reg(), at("15:38"))
+    assert not p.ok and p.missing == ["site"]  # destination isn't the site it left → bot asks
+    p = parse("A LS at 3:41", Reg(), at("15:42"))  # no default loading site → ask, never guess BG
+    assert not p.ok and p.missing == ["site"]
+
+
+def test_default_site_never_an_unloading_site(client, wa):
+    boss = wa.boss
+    boss.post("/api/shifts/start", json={"site": "DAIRY"})  # shift default = unloading site
+    assert inbound(client, FLEET, "A LS", "M1") == "unparsed"  # asks instead of 'A LS DAIRY'
+
+
+def test_ambiguous_ten_thirty_at_night_is_pm():
+    from datetime import datetime
+    from app.core import IST
+    from app.parse import take_time
+    sent = datetime(2026, 10, 14, 22, 35, tzinfo=IST)
+    assert f"{take_time(['10:30'], sent)[1]:%H:%M}" == "22:30"
+    assert f"{take_time(['05:30'], sent)[1]:%H:%M}" == "05:30"
