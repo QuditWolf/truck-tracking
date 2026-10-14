@@ -32,9 +32,8 @@ POSITION_LINES = [("loading", "Loading"), ("loaded", "Loaded"), ("unloaded", "Un
 
 
 def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
-    def extra(inf, man):
-        parts = [f"{inf} inf" if inf else "", f"{man} manual" if man else ""]
-        return f" ({', '.join(p for p in parts if p)})" if inf or man else ""
+    def extra(inf, man):  # hand-added counts (man) are folded in without a tag
+        return f" ({inf} inf)" if inf else ""
     lines = [title,
              f"Loaded {c.loaded}{extra(c.loaded_inf, c.loaded_manual)}" + (f": {_sites(c.loaded_by_site)}" if c.loaded_by_site else ""),
              f"Unloaded {c.unloaded}{extra(c.unloaded_inf, c.unloaded_manual)}" + (f": {_sites(c.unloaded_by_site)}" if c.unloaded_by_site else "")]
@@ -48,9 +47,6 @@ def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
     if notes and c.notes:
         lines.append("Inferred:")
         lines += c.notes
-    if notes and c.manual:
-        lines.append("Manual:")
-        lines += c.manual
     return "\n".join(lines)
 
 

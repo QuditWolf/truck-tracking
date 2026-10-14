@@ -341,8 +341,8 @@ def test_manual_counts_for_untracked_trucks(client):
     c = s["counts"]
     assert (c["loaded"], c["loaded_manual"], c["unloaded"], c["unloaded_manual"]) == (3, 2, 1, 1)
     assert c["loaded_by_site"] == {"SOC": 3} and c["per_truck"]["A"]["unloads"] == 1
-    assert "Loaded 3 (2 manual): SOC 3" in s["text"] and "Loaded: A*1 PB10 XY 1234*2" in s["text"]
-    assert "Manual:\nPB10 XY 1234 +2 loads SOC (manual): contractor ~Ravi" in s["text"]
+    assert "Loaded 3: SOC 3" in s["text"] and "Loaded: A*1 PB10 XY 1234*2" in s["text"]
+    assert "manual" not in s["text"].lower()  # folded in cleanly, no tag
     assert len(s["manual"]) == 2
     day = ravi.get("/api/summary/range?start=2026-10-13").json()["counts"]
     assert day["loaded_manual"] == 2
