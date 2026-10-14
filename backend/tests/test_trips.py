@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from app.trips import Event, Shift, analyze, count
 
 IST = timezone(timedelta(hours=5, minutes=30))
-SITES = {"SOC": "loading", "KN4": "loading", "DAIRY": "unloading", "BG": "depot", "NEW": None}
+SITES = {"SOC": "loading", "KN4": "loading", "DAIRY": "unloading", "BG": "unloading", "DEPOT": "depot", "NEW": None}
 
 
 def t(hm: str, day: int = 13) -> datetime:
@@ -115,7 +115,7 @@ def test_unknown_site_type_inferred_from_position():
 
 
 def test_depot_and_custom_verbs_ignored():
-    a, c = run([ev(1, "D", "ENTER", "BG", "07:00"), ev(2, "D", "BREAKDOWN", "SOC", "07:30"),
+    a, c = run([ev(1, "D", "ENTER", "DEPOT", "07:00"), ev(2, "D", "BREAKDOWN", "SOC", "07:30"),
                 ev(3, "D", "LS", "SOC", "08:00")])
     assert a.flags == {} and c.position == {"loading": ["D"]}
 
@@ -160,3 +160,15 @@ def test_summary_has_no_reached_line():
     from app.summary import counts_text
     _, c = run([ev(1, "D", "LO", "SOC", "07:00"), ev(2, "D", "US", "DAIRY", "08:00")])
     assert "Reached" not in counts_text("T", c)
+
+
+def test_unload_counted_without_reported_load():
+    # entered and left the unloading site, nothing else reported
+    _, c = run([ev(1, "D", "ENTER", "BG", "07:00"), ev(2, "D", "LEFT", "BG", "07:40")])
+    assert (c.unloaded, c.unloaded_by_site, c.loaded, c.loaded_inf) == (1, {"BG": 1}, 1, 1)
+    # US + UO only
+    _, c = run([ev(1, "E", "US", "DAIRY", "07:00"), ev(2, "E", "UO", "DAIRY", "07:30")])
+    assert (c.unloaded, c.unloaded_inf, c.unloaded_by_site) == (1, 0, {"DAIRY": 1})
+    # entered unloading site and started a new trip later → unload inferred
+    _, c = run([ev(1, "F", "ENTER", "BG", "07:00"), ev(2, "F", "ENTER", "SOC", "09:00")])
+    assert c.unloaded == 1 and c.unloaded_by_site == {"BG": 1}

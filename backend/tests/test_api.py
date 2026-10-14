@@ -365,3 +365,27 @@ def test_manual_counts_append_and_take_several_trucks(client):
     u.post("/api/manual", json={"trucks": ["A"], "kind": "load", "count": 1})  # adds on top again
     pt = u.get("/api/summary/shift").json()["counts"]["per_truck"]
     assert (pt["A"]["loads"], pt["B"]["loads"], pt["PB10"]["loads"]) == (4, 2, 2)  # 1 reported + 2 + 1
+
+
+def test_bg_depot_fixed_once_on_startup(tmp_path, monkeypatch):
+    from app import core
+    monkeypatch.setattr(core, "DB_PATH", str(tmp_path / "x.db"))
+    conn = core.connect(str(tmp_path / "x.db"))
+    core.init_db(conn)
+    conn.execute("INSERT INTO registry (kind, code, label, site_type, created_at) VALUES ('site','BG','BG','depot','x')")
+    conn.execute("DELETE FROM settings WHERE key = '_fix_bg_unloading'")
+    core.init_db(conn)
+    assert conn.execute("SELECT site_type FROM registry WHERE code='BG'").fetchone()[0] == "unloading"
+    conn.execute("UPDATE registry SET site_type = 'depot' WHERE code = 'BG'")  # admin changes it back later
+    core.init_db(conn)
+    assert conn.execute("SELECT site_type FROM registry WHERE code='BG'").fetchone()[0] == "depot"  # not re-applied
+
+
+def test_admin_sees_everyones_reports_users_only_their_own(client):
+    boss = login(client, "boss@x.org", "Boss")
+    ravi = login(client, "ravi@x.org", "Ravi")
+    ravi.post("/api/shifts/start", json={})
+    ravi.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"})
+    boss.post("/api/reports", json={"trucks": ["B"], "verb": "LS", "site": "SOC"})
+    assert {r["user"] for r in boss.get("/api/reports?mine=false").json()} == {"Boss", "Ravi"}
+    assert {r["user"] for r in ravi.get("/api/reports?mine=false").json()} == {"Ravi"}  # non-admin: own only

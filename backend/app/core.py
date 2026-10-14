@@ -119,6 +119,22 @@ def init_db(conn: sqlite3.Connection) -> None:
             conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, full))
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
+    data_fixes(conn)
+
+
+def data_fixes(conn: sqlite3.Connection) -> None:
+    """One-time, audited corrections to live data. Each runs once (marker in settings)."""
+    done = lambda key: conn.execute("SELECT 1 FROM settings WHERE key = ?", (key,)).fetchone()
+    # BG (Bhandara Ground) is an unloading site; the first seed wrongly made it a depot,
+    # which made ENTER/LEFT at BG invisible to the trip engine.
+    if not done("_fix_bg_unloading"):
+        row = conn.execute("SELECT id FROM registry WHERE kind = 'site' AND code = 'BG' COLLATE NOCASE "
+                           "AND site_type = 'depot'").fetchone()
+        if row:
+            conn.execute("UPDATE registry SET site_type = 'unloading' WHERE id = ?", (row["id"],))
+            audit(conn, None, "update", "registry", row["id"], before={"site_type": "depot"},
+                  after={"site_type": "unloading", "reason": "BG is an unloading site"})
+        conn.execute("INSERT INTO settings (key, value) VALUES ('_fix_bg_unloading', '1')")
 
 
 @contextmanager
