@@ -27,7 +27,7 @@ def _sites(d: dict) -> str:
 
 # Order of the per-truck lines. A truck can be in "Loading" now and also have loads counted.
 # Only LS puts a truck in "Loading"; ENTER is "At loading site". Trucks between LO and US aren't listed.
-POSITION_LINES = [("loading", "Loading"), ("loaded", "Loaded"), ("unloading", "Unloading"),
+POSITION_LINES = [("loading", "Loading"), ("loaded", "Loaded"), ("unloaded", "Unloaded"), ("unloading", "Unloading"),
                   ("at_loading", "At loading site"), ("at_unloading", "At unloading site"), ("empty", "Empty")]
 
 
@@ -36,11 +36,11 @@ def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
     lines = [title,
              f"Loaded {c.loaded}{inf(c.loaded_inf)}" + (f": {_sites(c.loaded_by_site)}" if c.loaded_by_site else ""),
              f"Unloaded {c.unloaded}{inf(c.unloaded_inf)}" + (f": {_sites(c.unloaded_by_site)}" if c.unloaded_by_site else "")]
-    loads = " ".join(f"{t}*{p['loads']}" for t, p in sorted(c.per_truck.items()) if p["loads"])
+    per = {k: " ".join(f"{t}*{p[k]}" for t, p in sorted(c.per_truck.items()) if p[k]) for k in ("loads", "unloads")}
     for key, label in POSITION_LINES:
-        if key == "loaded":
-            if loads:
-                lines.append(f"Loaded: {loads}")  # loads per truck this shift
+        if key in ("loaded", "unloaded"):
+            if v := per["loads" if key == "loaded" else "unloads"]:
+                lines.append(f"{label}: {v}")  # per truck, this shift
         elif v := c.position.get(key):
             lines.append(f"{label}: {','.join(v)}")
     if notes and c.notes:

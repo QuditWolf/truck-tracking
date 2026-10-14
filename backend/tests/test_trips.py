@@ -146,6 +146,7 @@ def test_summary_lists_loading_now_and_loads_per_truck():
     _, c = run(evs)
     text = counts_text("T", c, notes=False)
     assert "Loading: B" in text and "Loaded: A*2 B*1" in text and "En route" not in text
+    assert "Unloaded: A*1 B*1" in text
 
 
 def test_entered_truck_is_at_loading_site_not_loading():
