@@ -38,7 +38,7 @@
       {#each board.trucks as t (t.truck)}
         <div class="truck {t.position}">
           <div class="top">
-            <span class="code">{t.truck}</span>
+            <span class="code" class:long={t.truck.length > 3} title={t.truck}>{t.truck}</span>
             <span class="dot" title={LABEL[t.position]}></span>
           </div>
           {#if t.last}
@@ -83,7 +83,9 @@
   .truck.idle::after { display: none; }
 
   .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-  .code { font: 650 22px/1 var(--mono); letter-spacing: -0.05em; }
+  .code { font: 650 22px/1 var(--mono); letter-spacing: -0.05em; min-width: 0; overflow-wrap: anywhere; }
+  .code.long { font-size: 12px; line-height: 1.15; letter-spacing: -0.04em; }  /* full reg. no., never truncated */
+  .top { gap: 6px; }
   .idle .code { color: var(--mute); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
   .last { font-size: 12.5px; font-weight: 600; }
@@ -92,7 +94,7 @@
     position: absolute; right: 10px; bottom: 10px; font-size: 10.5px; font-weight: 600;
     padding: 3px 6px; border-radius: 6px; background: var(--paper-2); color: var(--ink-2);
   }
-  @media (max-width: 520px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; } .truck { min-height: 84px; padding: 10px; } .code { font-size: 19px; } }
+  @media (max-width: 520px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; } .truck { min-height: 84px; padding: 10px; } .code { font-size: 19px; } .code.long { font-size: 11px; } }
   .skeleton .truck { animation: pulse 1.4s ease-in-out infinite; }
   .skeleton .truck::after { display: none; }
 </style>

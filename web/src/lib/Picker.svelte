@@ -11,6 +11,11 @@
     ...options.map((o) => ({ code: o.code, sub: variant === 'code' ? '' : o.label !== o.code ? o.label : '', title: [o.label, o.plate].filter(Boolean).join(' · ') })),
     ...extra.filter((e) => !options.some((o) => o.code === e)).map((code) => ({ code, sub: 'new', isNew: true })),
   ])
+  // Long codes (e.g. registration numbers) take 2–3 grid columns instead of overflowing.
+  const span = (code) => {
+    const n = code.length
+    return variant === 'code' ? (n <= 4 ? 1 : n <= 8 ? 2 : 3) : (n <= 9 ? 1 : 2)
+  }
   const isOn = (code) => (multi ? value.includes(code) : value === code)
   const count = $derived(multi ? value.length : value ? 1 : 0)
 
@@ -40,7 +45,8 @@
   </header>
   <div class="tiles {variant}">
     {#each tiles as t (t.code)}
-      <button type="button" class="tile" class:on={isOn(t.code)} class:new={t.isNew} title={t.title} onclick={() => toggle(t.code)}
+      <button type="button" class="tile" class:on={isOn(t.code)} class:new={t.isNew} class:long={t.code.length > 8}
+              title={t.title} style:grid-column="span {span(t.code)}" onclick={() => toggle(t.code)}
               animate:flip={{ duration: 320 }}>
         <span class="code">{t.code}</span>
         {#if t.sub}<span class="sub">{t.sub}</span>{/if}
@@ -64,7 +70,7 @@
   .clear { font-size: 12px; color: var(--mute); }
   .clear:hover { color: var(--ink); }
 
-  .tiles { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(var(--tile-min, 54px), 1fr)); }
+  .tiles { display: grid; gap: 6px; grid-auto-flow: row dense; grid-template-columns: repeat(auto-fill, minmax(var(--tile-min, 54px), 1fr)); }
   .tiles.code { --tile-min: 54px; }
   .tiles.labelled { --tile-min: 104px; }
 
@@ -77,7 +83,8 @@
   .tile:hover { box-shadow: inset 0 0 0 1px var(--ink-2), var(--shadow); }
   .tile:active { transform: scale(.95); }
   .tile.on { background: var(--ink); color: var(--paper); box-shadow: inset 0 0 0 1px var(--ink), 0 6px 14px -8px rgba(22, 24, 27, .6); }
-  .code { font: 600 15px/1 var(--mono); letter-spacing: -0.03em; }
+  .code { font: 600 15px/1.1 var(--mono); letter-spacing: -0.03em; max-width: 100%; overflow-wrap: anywhere; text-align: center; }
+  .tile.long .code { font-size: 13px; }
   .sub {
     font-size: 11px; line-height: 1.15; color: var(--mute); text-align: center;
     overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;

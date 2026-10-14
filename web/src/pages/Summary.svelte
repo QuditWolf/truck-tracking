@@ -242,7 +242,7 @@
   }
 
   .trips { display: flex; flex-direction: column; gap: 10px; }
-  .trip-row { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; }
+  .trip-row { display: grid; grid-template-columns: minmax(34px, max-content) 1fr; gap: 10px; align-items: start; }
   .trip-row > .mono { padding-top: 5px; }
   .trip-list { display: flex; flex-wrap: wrap; gap: 6px; }
   .trip { display: grid; grid-template-columns: repeat(8, auto); gap: 2px; padding: 3px; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair-2); }
