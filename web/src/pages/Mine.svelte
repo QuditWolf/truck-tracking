@@ -1,26 +1,21 @@
 <script>
   import ReportLog from '../lib/ReportLog.svelte'
+  import Toggle from '../lib/Toggle.svelte'
   import { api } from '../lib/api.js'
 
   let { registry, me, tick, onChange } = $props()
-  let scope = $state('mine') // admins: 'mine' | 'all'
+  let onlyMine = $state(false) // default: everyone's reports
   let items = $state(null)
   $effect(() => {
     tick
-    const url = scope === 'all' ? '/api/reports?mine=false&limit=1000' : '/api/reports?limit=300'
-    api.get(url).then((r) => (items = r))
+    api.get(onlyMine ? '/api/reports?limit=300' : '/api/reports?mine=false&limit=1000').then((r) => (items = r))
   })
   const flagged = $derived(items?.filter((r) => r.flags.length).length || 0)
 </script>
 
 <div class="mine">
   <div class="top">
-    {#if me.is_admin}
-      <div class="seg">
-        <button class:on={scope === 'mine'} onclick={() => (scope = 'mine')}>Mine</button>
-        <button class:on={scope === 'all'} onclick={() => (scope = 'all')}>Everyone</button>
-      </div>
-    {/if}
+    <div class="only"><Toggle checked={onlyMine} label="Only mine" onchange={(v) => (onlyMine = v)} /></div>
     {#if items}
       <p class="lede">
         <b class="mono">{items.length}</b> reports
@@ -29,13 +24,16 @@
     {/if}
   </div>
   {#if items}
-    <ReportLog {items} {registry} {me} {onChange} showUser={scope === 'all'}
-      empty={scope === 'all' ? 'No reports yet.' : "You haven't reported anything yet."} />
+    <!-- edit/delete buttons appear only on your own reports (admins: all) -->
+    <ReportLog {items} {registry} {me} {onChange} showUser={!onlyMine}
+      empty={onlyMine ? "You haven't reported anything yet." : 'No reports yet.'} />
   {/if}
 </div>
 
 <style>
   .mine { max-width: 860px; width: 100%; padding-bottom: 32px; }
-  .top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  .only { min-width: 180px; }
+  .only :global(.toggle) { padding: 4px 0; gap: 10px; }
   .lede { display: flex; align-items: center; gap: 10px; color: var(--ink-2); }
 </style>

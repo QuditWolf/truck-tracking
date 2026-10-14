@@ -57,7 +57,7 @@
   const NAV = [
     ['report', 'Report', 'report', 'Report'],
     ['fleet', 'Fleet', 'truck', 'Fleet'],
-    ['mine', 'My reports', 'mine', 'Mine'],
+    ['mine', 'Reports', 'mine', 'Reports'],
     ['summary', 'Summary', 'summary', 'Summary'],
   ]
   const nav = $derived(me?.is_admin ? [...NAV, ['admin', 'Admin', 'admin', 'Admin']] : NAV)

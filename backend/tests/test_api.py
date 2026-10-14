@@ -381,14 +381,21 @@ def test_bg_depot_fixed_once_on_startup(tmp_path, monkeypatch):
     assert conn.execute("SELECT site_type FROM registry WHERE code='BG'").fetchone()[0] == "depot"  # not re-applied
 
 
-def test_admin_sees_everyones_reports_users_only_their_own(client):
+def test_everyone_sees_all_reports_but_edits_only_their_own(client):
     boss = login(client, "boss@x.org", "Boss")
     ravi = login(client, "ravi@x.org", "Ravi")
     ravi.post("/api/shifts/start", json={})
     ravi.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"})
     boss.post("/api/reports", json={"trucks": ["B"], "verb": "LS", "site": "SOC"})
     assert {r["user"] for r in boss.get("/api/reports?mine=false").json()} == {"Boss", "Ravi"}
-    assert {r["user"] for r in ravi.get("/api/reports?mine=false").json()} == {"Ravi"}  # non-admin: own only
+    others = ravi.get("/api/reports?mine=false").json()
+    assert {r["user"] for r in others} == {"Boss", "Ravi"}  # everyone reads all
+    assert {r["user"] for r in ravi.get("/api/reports").json()} == {"Ravi"}  # "only mine"
+    boss_report = next(r for r in others if r["user"] == "Boss")
+    assert ravi.patch(f"/api/reports/{boss_report['id']}", json={"verb": "LO"}).status_code == 403
+    assert ravi.delete(f"/api/reports/{boss_report['id']}").status_code == 403
+    ravi_report = next(r for r in others if r["user"] == "Ravi")
+    assert boss.patch(f"/api/reports/{ravi_report['id']}", json={"verb": "LO"}).status_code == 200  # admin: anyone
 
 
 def test_whatsapp_summary_has_final_counts_only_web_has_details(client):

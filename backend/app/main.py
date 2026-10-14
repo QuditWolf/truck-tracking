@@ -217,8 +217,7 @@ def create_report(body: ReportIn, user=Depends(member), conn=Depends(get_conn)):
 @app.get("/api/reports")
 def list_reports(mine: bool = True, limit: int = 100, include_deleted: bool = False,
                  user=Depends(member), conn=Depends(get_conn)):
-    if not mine and not user["is_admin"]:
-        mine = True
+    # everyone can read all reports; editing stays limited to the author or an admin (_own)
     q = "SELECT * FROM reports WHERE 1=1"
     args: list = []
     if mine:
