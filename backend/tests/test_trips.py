@@ -153,3 +153,9 @@ def test_entered_truck_is_at_loading_site_not_loading():
     _, c = run([ev(1, "B", "LO", "SOC", "07:00"), ev(2, "B", "UO", "DAIRY", "08:00"), ev(3, "B", "ENTER", "SOC", "09:00")])
     text = counts_text("T", c, notes=False)
     assert "At loading site: B" in text and "Loading:" not in text and "Loaded: B*1" in text
+
+
+def test_summary_has_no_reached_line():
+    from app.summary import counts_text
+    _, c = run([ev(1, "D", "LO", "SOC", "07:00"), ev(2, "D", "US", "DAIRY", "08:00")])
+    assert "Reached" not in counts_text("T", c)

@@ -35,7 +35,6 @@ def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
     inf = lambda n: f" ({n} inf)" if n else ""
     lines = [title,
              f"Loaded {c.loaded}{inf(c.loaded_inf)}" + (f": {_sites(c.loaded_by_site)}" if c.loaded_by_site else ""),
-             f"Reached {c.reached}",
              f"Unloaded {c.unloaded}{inf(c.unloaded_inf)}" + (f": {_sites(c.unloaded_by_site)}" if c.unloaded_by_site else "")]
     loads = " ".join(f"{t}*{p['loads']}" for t, p in sorted(c.per_truck.items()) if p["loads"])
     for key, label in POSITION_LINES:

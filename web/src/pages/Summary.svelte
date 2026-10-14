@@ -105,7 +105,6 @@
   {#if c}
     <div class="stats stagger">
       <Stat label="Loaded" value={c.loaded} sub={c.loaded_inf ? `${c.loaded_inf} inferred` : 'all reported'} accent />
-      <Stat label="Reached" value={c.reached} sub="at unloading" />
       <Stat label="Unloaded" value={c.unloaded} sub={c.unloaded_inf ? `${c.unloaded_inf} inferred` : 'all reported'} />
       <Stat label="Flags" value={c.flags} sub={c.flags ? 'check reports' : 'clean'} warn={c.flags > 0} />
     </div>
@@ -211,7 +210,7 @@
   .small { font-size: 12.5px; }
   .strong { font-weight: 650; }
 
-  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; }
   .wide { grid-column: 1 / -1; }
 
@@ -258,6 +257,6 @@
 
   @media (max-width: 1000px) {
     .grid { grid-template-columns: minmax(0, 1fr); }
-    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
 </style>
