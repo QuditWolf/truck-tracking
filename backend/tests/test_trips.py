@@ -199,3 +199,12 @@ def test_haul_is_loaded_until_unloading_site():
                 ev(6, "F", "UO", "BG", "08:00")])                                       # empty return → not tracked
     text = counts_text("T", c, notes=False)
     assert "Hauling to unload: 2 (A,D)" in text and "At unloading site: E" in text
+
+
+def test_summary_layout_blocks():
+    from app.summary import counts_text
+    _, c = run([ev(1, "A", "LO", "SOC", "07:00"), ev(2, "B", "LS", "SOC", "07:10"), ev(3, "D", "UO", "DAIRY", "07:20")])
+    assert counts_text("Shift X", c) == (
+        "Shift X\n\n"
+        "Loaded *1*: SOC 1\nHauling to unload: 1 (A)\nUnloaded 1: DAIRY 1\n\n"
+        "Loading: B\nLoaded: A*1\nUnloaded: D*1")

@@ -24,7 +24,7 @@
 
 <button class="shift" class:on={!!shift} onclick={show}>
   <span class="pill" class:live={!!shift} class:warn={!shift}>{shift ? 'Shift' : 'No shift'}</span>
-  {#if shift}<span class="mono">since {time(shift.started_at)}{shift.default_site ? ` · ${shift.default_site}` : ''}</span>{/if}
+  {#if shift}<span class="mono txt"><span class="since">since </span>{time(shift.started_at)}{shift.default_site ? ` · ${shift.default_site}` : ''}</span>{/if}
 </button>
 
 <Modal bind:open title={shift ? 'Shift' : 'Start shift'}>
@@ -51,8 +51,10 @@
   .shift {
     display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 6px; border-radius: 99px;
     background: var(--surface); box-shadow: inset 0 0 0 1px var(--hair); font-size: 12px; color: var(--ink-2);
-    transition: box-shadow .15s; white-space: nowrap; max-width: 100%; overflow: hidden;
+    transition: box-shadow .15s; white-space: nowrap; max-width: 100%; min-width: 0; overflow: hidden;
   }
+  .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 400px) { .since { display: none; } }
   .shift:not(.on) { padding-right: 6px; }
   .shift:hover { box-shadow: inset 0 0 0 1px var(--ink-2); }
 </style>

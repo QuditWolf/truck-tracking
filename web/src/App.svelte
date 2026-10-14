@@ -193,7 +193,10 @@
     .app { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
     .side { display: none; }
     .compact { display: inline-grid; }
-    .brand.compact { padding: 0; margin-right: auto; }
+    .brand.compact { padding: 0; margin-right: auto; flex-shrink: 0; }
+    .top { gap: 8px; }
+    .top :global(.shift) { flex-shrink: 1; }
+    .avatar.compact { flex-shrink: 0; }
     .top h1 { display: none; }
     .page { padding-top: 14px; }
     .tabs {

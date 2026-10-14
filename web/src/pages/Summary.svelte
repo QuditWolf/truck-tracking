@@ -2,7 +2,7 @@
   import Icon from '../lib/Icon.svelte'
   import ManualCounts from '../lib/ManualCounts.svelte'
   import Stat from '../lib/Stat.svelte'
-  import { api, dateTime, time, todayIST } from '../lib/api.js'
+  import { api, dateTime, time, todayIST, waHtml } from '../lib/api.js'
   import { toast } from '../lib/stores.svelte.js'
 
   let { tick, registry, me } = $props()
@@ -130,7 +130,7 @@
 
       <section class="card wa">
         <div class="card-h"><h3>{data.title}</h3>{#if data.open}<span class="pill live">Live</span>{/if}</div>
-        <div class="card-b"><pre class="mono">{data.text}</pre></div>
+        <div class="card-b"><pre class="mono">{@html waHtml(data.text)}</pre></div>
       </section>
 
       <section class="card wide">
@@ -235,7 +235,7 @@
   .small { font-size: 12.5px; }
   .strong { font-weight: 650; }
 
-  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 12px; }
   .grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; }
   .wide { grid-column: 1 / -1; }
 
@@ -296,6 +296,6 @@
   }
   @media (max-width: 1000px) {
     .grid { grid-template-columns: minmax(0, 1fr); }
-    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .stats { gap: 8px; }
   }
 </style>

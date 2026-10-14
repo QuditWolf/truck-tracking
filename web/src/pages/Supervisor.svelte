@@ -4,7 +4,7 @@
   import FleetBoard from '../lib/FleetBoard.svelte'
   import Icon from '../lib/Icon.svelte'
   import Stat from '../lib/Stat.svelte'
-  import { api, time } from '../lib/api.js'
+  import { api, time, waHtml } from '../lib/api.js'
   import { toast } from '../lib/stores.svelte.js'  // toasts render in App
 
   let { token } = $props()
@@ -62,7 +62,7 @@
           <div class="card-h"><h3>Summary</h3>
             <span class="row"><button class="btn quiet sm" onclick={copy}><Icon name="copy" size={14} />Copy</button>
               <button class="btn signal sm" onclick={share}><Icon name="send" size={14} />Share</button></span></div>
-          <div class="card-b"><pre class="mono">{data.text}</pre></div>
+          <div class="card-b"><pre class="mono">{@html waHtml(data.text)}</pre></div>
         </section>
         <section class="card"><div class="card-b board"><FleetBoard {tick} src={`/api/public/${token}/board`} /></div></section>
       </div>

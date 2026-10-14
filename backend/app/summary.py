@@ -33,20 +33,24 @@ POSITION_LINES = [("loading", "Loading"), ("en_route", "Hauling to unload"), ("l
 
 
 def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
-    def extra(inf, man):  # WhatsApp gets final counts only; inferred/manual detail lives on the web page
-        return ""
-    lines = [title,
-             f"Loaded {c.loaded}{extra(c.loaded_inf, c.loaded_manual)}" + (f": {_sites(c.loaded_by_site)}" if c.loaded_by_site else ""),
-             f"Unloaded {c.unloaded}{extra(c.unloaded_inf, c.unloaded_manual)}" + (f": {_sites(c.unloaded_by_site)}" if c.unloaded_by_site else "")]
+    """WhatsApp summary: title / totals (Loaded in *bold*, hauling, Unloaded) / per-truck detail.
+    Final counts only; inferred/manual detail lives on the web page."""
+    totals = [f"Loaded *{c.loaded}*" + (f": {_sites(c.loaded_by_site)}" if c.loaded_by_site else "")]
+    if hauling := c.position.get("en_route"):
+        totals.append(f"Hauling to unload: {len(hauling)} ({','.join(hauling)})")
+    totals.append(f"Unloaded {c.unloaded}" + (f": {_sites(c.unloaded_by_site)}" if c.unloaded_by_site else ""))
+
     per = {k: " ".join(f"{t}*{p[k]}" for t, p in sorted(c.per_truck.items()) if p[k]) for k in ("loads", "unloads")}
+    detail = []
     for key, label in POSITION_LINES:
+        if key == "en_route":
+            continue  # shown with the totals
         if key in ("loaded", "unloaded"):
             if v := per["loads" if key == "loaded" else "unloads"]:
-                lines.append(f"{label}: {v}")  # per truck, this shift
+                detail.append(f"{label}: {v}")  # per truck, this shift
         elif v := c.position.get(key):
-            # Hauling to unload = loaded and on the way to unloading (LO or LEFT loading site), with a count
-            lines.append(f"{label}: {len(v)} ({','.join(v)})" if key == "en_route" else f"{label}: {','.join(v)}")
-    return "\n".join(lines)
+            detail.append(f"{label}: {','.join(v)}")
+    return "\n\n".join("\n".join(block) for block in ([title], totals, detail) if block)
 
 
 def _minutes(a, b) -> Optional[float]:

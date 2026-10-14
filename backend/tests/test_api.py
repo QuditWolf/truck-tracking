@@ -57,7 +57,7 @@ def test_report_flow_with_relay_and_flags(client):
 
     s = ravi.get("/api/summary/shift").json()
     assert s["counts"]["loaded"] == 2 and s["counts"]["loaded_by_site"] == {"SOC": 2}
-    assert s["text"].startswith("Shift 13 Oct #1 06:00-now\nLoaded 2: SOC 2")
+    assert s["text"].startswith("Shift 13 Oct #1 06:00-now\n\nLoaded *2*: SOC 2\nHauling to unload: 2 (A,B)\nUnloaded 0\n\n")
 
     b = ravi.get("/api/board").json()
     pos = {t["truck"]: t["position"] for t in b["trucks"]}
@@ -341,7 +341,7 @@ def test_manual_counts_for_untracked_trucks(client):
     c = s["counts"]
     assert (c["loaded"], c["loaded_manual"], c["unloaded"], c["unloaded_manual"]) == (3, 2, 1, 1)
     assert c["loaded_by_site"] == {"SOC": 3} and c["per_truck"]["A"]["unloads"] == 1
-    assert "Loaded 3: SOC 3" in s["text"] and "Loaded: A*1 PB10 XY 1234*2" in s["text"]
+    assert "Loaded *3*: SOC 3" in s["text"] and "Loaded: A*1 PB10 XY 1234*2" in s["text"]
     assert "manual" not in s["text"].lower()  # folded in cleanly, no tag
     assert len(s["manual"]) == 2
     day = ravi.get("/api/summary/range?start=2026-10-13").json()["counts"]
@@ -405,7 +405,7 @@ def test_whatsapp_summary_has_final_counts_only_web_has_details(client):
                                  "remarks": "wet paddy"})
     u.post("/api/reports", json={"trucks": ["A"], "verb": "US", "site": "DAIRY", "event_time": "2026-10-13T08:00"})
     s = u.get("/api/summary/shift").json()
-    assert "Loaded 1: SOC 1" in s["text"]  # inferred load, shown as a plain count
+    assert "Loaded *1*: SOC 1" in s["text"]  # inferred load, shown as a plain count
     assert "inf" not in s["text"] and "Inferred" not in s["text"]
     assert s["counts"]["loaded_inf"] == 1 and s["counts"]["notes"]  # detail kept for the web page
     assert [(r["trucks"], r["verb"], r["remarks"], r["user"]) for r in s["remarks"]] == [("A", "LS", "wet paddy", "Ravi")]

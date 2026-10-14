@@ -160,12 +160,12 @@ def test_control_commands(client, wa):
     drain(client)
     texts = wa.texts(CONTROL)
     assert texts[0].startswith("Shift start KN4 @")
-    assert any(t.startswith("Shift ") and "Loaded 0" in t for t in texts)
+    assert any(t.startswith("Shift ") and "Loaded *0*" in t for t in texts)
     assert any(t.startswith("Commands:") for t in texts)
     assert any(t.startswith("Shift end @") for t in texts)
     assert texts[-1] == "Not done: no open shift"
     # summary replies quote the command
-    assert next(q for j, t, q in wa.sent if "Loaded 0" in t)["id"] == "C2"
+    assert next(q for j, t, q in wa.sent if "Loaded *0*" in t)["id"] == "C2"
 
 
 def test_inbound_requires_token(client, wa):

@@ -47,3 +47,10 @@ export function localInput(iso) {
 export const todayIST = () => localInput().slice(0, 10)
 
 export const line = (r) => [r.trucks.join(','), r.verb, r.site, '@' + time(r.event_time)].filter(Boolean).join(' ')
+
+// WhatsApp-style text → safe HTML: escapes everything, then *bold* (only when the * follows a space
+// or line start, as WhatsApp does — so per-truck counts like A*2 stay as they are).
+export function waHtml(text) {
+  const esc = (text || '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch])
+  return esc.replace(/(^|[\s(])\*([^*\n]+?)\*(?=$|[\s.,:;)!?])/gm, '$1<b>$2</b>')
+}
