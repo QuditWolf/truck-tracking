@@ -145,4 +145,11 @@ def test_summary_lists_loading_now_and_loads_per_truck():
            ev(4, "B", "LO", "SOC", "06:40"), ev(5, "B", "UO", "DAIRY", "07:40"), ev(6, "B", "LS", "SOC", "08:40")]
     _, c = run(evs)
     text = counts_text("T", c, notes=False)
-    assert "Loading: B" in text and "Loaded: A*2 B*1" in text and "En route: A" in text
+    assert "Loading: B" in text and "Loaded: A*2 B*1" in text and "En route" not in text
+
+
+def test_entered_truck_is_at_loading_site_not_loading():
+    from app.summary import counts_text
+    _, c = run([ev(1, "B", "LO", "SOC", "07:00"), ev(2, "B", "UO", "DAIRY", "08:00"), ev(3, "B", "ENTER", "SOC", "09:00")])
+    text = counts_text("T", c, notes=False)
+    assert "At loading site: B" in text and "Loading:" not in text and "Loaded: B*1" in text

@@ -14,7 +14,7 @@
   onDestroy(() => clearInterval(timer))
 
   const ORDER = ['at_loading', 'loading', 'en_route', 'at_unloading', 'unloading', 'empty', 'done', 'idle']
-  const LABEL = { at_loading: 'At loading', loading: 'Loading', en_route: 'En route', at_unloading: 'At unloading',
+  const LABEL = { at_loading: 'At loading site', loading: 'Loading', en_route: 'Loaded', at_unloading: 'At unloading site',
                   unloading: 'Unloading', empty: 'Empty', done: 'Done', idle: 'Idle' }
   const counts = $derived(
     board ? ORDER.map((k) => [k, board.trucks.filter((t) => t.position === k).length]).filter(([, n]) => n) : [],

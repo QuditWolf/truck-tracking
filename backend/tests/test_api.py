@@ -294,3 +294,16 @@ def test_draft_in_same_minute_gets_the_duplicate_warning(client):
     chk = u.post("/api/reports/check", json={"trucks": ["A"], "verb": "LS", "site": "SOC",
                                               "event_time": "2026-10-13T08:10"}).json()
     assert chk["warnings"] == ["A LS SOC already reported @08:10 ~U"]
+
+
+def test_deleted_ls_no_longer_loading(client):
+    boss = login(client, "boss@x.org", "Boss")
+    seed(boss)
+    boss.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})
+    boss.post("/api/reports", json={"trucks": ["B"], "verb": "ENTER", "site": "SOC", "event_time": "2026-10-13T08:00"})
+    ls = boss.post("/api/reports", json={"trucks": ["B"], "verb": "LS", "site": "SOC", "event_time": "2026-10-13T08:05"}).json()
+    assert "Loading: B" in boss.get("/api/summary/shift").json()["text"]
+    boss.delete(f"/api/reports/{ls['id']}")
+    text = boss.get("/api/summary/shift").json()["text"]
+    assert "Loading:" not in text and "At loading site: B" in text
+    assert {t["truck"]: t["position"] for t in boss.get("/api/board").json()["trucks"]}["B"] == "at_loading"

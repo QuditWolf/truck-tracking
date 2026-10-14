@@ -26,9 +26,9 @@ def _sites(d: dict) -> str:
 
 
 # Order of the per-truck lines. A truck can be in "Loading" now and also have loads counted.
-POSITION_LINES = [("loading", "Loading"), ("loaded", "Loaded"), ("en_route", "En route"),
-                  ("at_unloading", "At unloading"), ("unloading", "Unloading"),
-                  ("at_loading", "At loading"), ("empty", "Empty")]
+# Only LS puts a truck in "Loading"; ENTER is "At loading site". Trucks between LO and US aren't listed.
+POSITION_LINES = [("loading", "Loading"), ("loaded", "Loaded"), ("unloading", "Unloading"),
+                  ("at_loading", "At loading site"), ("at_unloading", "At unloading site"), ("empty", "Empty")]
 
 
 def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
