@@ -145,7 +145,7 @@ def test_summary_lists_loading_now_and_loads_per_truck():
            ev(4, "B", "LO", "SOC", "06:40"), ev(5, "B", "UO", "DAIRY", "07:40"), ev(6, "B", "LS", "SOC", "08:40")]
     _, c = run(evs)
     text = counts_text("T", c, notes=False)
-    assert "Loading: B" in text and "Loaded: A*2 B*1" in text and "En route" not in text
+    assert "Loading: B" in text and "Loaded: A*2 B*1" in text and "Haul: 1 (A)" in text
     assert "Unloaded: A*1 B*1" in text
 
 
@@ -189,3 +189,13 @@ def test_real_shift_14_oct_bg_enter_left():
     assert "D ENTER BG already reported @15:38 ~Mileeth" in every
     assert "A LS at BG, an unloading site" in every
     assert c.loaded_by_site == {"SKP": 2}  # U LS→BG (inferred), A LO at SKP
+
+
+def test_haul_is_loaded_until_unloading_site():
+    from app.summary import counts_text
+    _, c = run([ev(1, "A", "LO", "SKP", "07:00"),                                   # LO, not left yet
+                ev(2, "D", "LS", "SKP", "07:00"), ev(3, "D", "LEFT", "SKP", "07:30"),  # left loading site
+                ev(4, "E", "LO", "SKP", "07:00"), ev(5, "E", "ENTER", "BG", "08:00"),  # reached BG → not haul
+                ev(6, "F", "UO", "BG", "08:00")])                                       # empty return → not tracked
+    text = counts_text("T", c, notes=False)
+    assert "Haul: 2 (A,D)" in text and "At unloading site: E" in text

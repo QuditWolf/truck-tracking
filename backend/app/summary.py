@@ -26,8 +26,9 @@ def _sites(d: dict) -> str:
 
 
 # Order of the per-truck lines. A truck can be in "Loading" now and also have loads counted.
-# Only LS puts a truck in "Loading"; ENTER is "At loading site". Trucks between LO and US aren't listed.
-POSITION_LINES = [("loading", "Loading"), ("loaded", "Loaded"), ("unloaded", "Unloaded"), ("unloading", "Unloading"),
+# Only LS puts a truck in "Loading"; ENTER is "At loading site"; LO / LEFT loading site is "Haul"
+# until the truck reaches an unloading site. The empty return trip isn't tracked.
+POSITION_LINES = [("loading", "Loading"), ("en_route", "Haul"), ("loaded", "Loaded"), ("unloaded", "Unloaded"), ("unloading", "Unloading"),
                   ("at_loading", "At loading site"), ("at_unloading", "At unloading site")]
 
 
@@ -43,7 +44,8 @@ def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
             if v := per["loads" if key == "loaded" else "unloads"]:
                 lines.append(f"{label}: {v}")  # per truck, this shift
         elif v := c.position.get(key):
-            lines.append(f"{label}: {','.join(v)}")
+            # Haul = loaded and on the way to unloading (LO or LEFT loading site), with a count
+            lines.append(f"{label}: {len(v)} ({','.join(v)})" if key == "en_route" else f"{label}: {','.join(v)}")
     return "\n".join(lines)
 
 
