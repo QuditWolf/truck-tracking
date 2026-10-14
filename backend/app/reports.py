@@ -23,7 +23,7 @@ def report_dict(conn, reg: Registry, row) -> dict:
         "user_id": row["user_id"],
         "user": user["name"] if user else "?",
         "source": row["source"],
-        "trucks": sorted(reg.canon(t).code for t in truck_ids),
+        "trucks": sorted({reg.canon(t).code for t in truck_ids}),  # merged trucks collapse into one
         "verb": verb.code,
         "site": site.code if site else None,
         "site_as_reported": raw_site.code if raw_site else None,

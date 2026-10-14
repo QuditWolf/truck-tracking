@@ -28,7 +28,7 @@ def _sites(d: dict) -> str:
 # Order of the per-truck lines. A truck can be in "Loading" now and also have loads counted.
 # Only LS puts a truck in "Loading"; ENTER is "At loading site". Trucks between LO and US aren't listed.
 POSITION_LINES = [("loading", "Loading"), ("loaded", "Loaded"), ("unloaded", "Unloaded"), ("unloading", "Unloading"),
-                  ("at_loading", "At loading site"), ("at_unloading", "At unloading site"), ("empty", "Empty")]
+                  ("at_loading", "At loading site"), ("at_unloading", "At unloading site")]
 
 
 def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
@@ -101,9 +101,15 @@ def manual_text(m: dict) -> str:
 
 
 def apply_manual(conn, shift_id: int, c: trips.Counts) -> list[dict]:
-    """Add hand-entered counts for untracked trucks into the shift's counts."""
+    """Add hand-entered counts for untracked trucks into the shift's counts.
+    Truck names resolve through the registry at read time, so later merges apply."""
+    from .registry import Registry
+    reg = Registry(conn)
     entries = manual_entries(conn, shift_id)
     for m in entries:
+        known = reg.find("truck", m["truck"], active_only=False)
+        if known:
+            m["truck"] = known.code
         n, site = m["count"], m["site"] or "?"
         pt = c.per_truck.setdefault(m["truck"], {"trips": 0, "loads": 0, "unloads": 0})
         if m["kind"] == "load":
@@ -135,14 +141,17 @@ def shift_summary(conn, shift_id: Optional[int] = None) -> Optional[dict]:
     c = trips.count(seg, a.flags)
     manual = apply_manual(conn, sh.id, c)
     title = shift_label(sh, shifts)
-    remarks = [dict(r) for r in conn.execute(
-        "SELECT r.id, r.event_time, r.remarks, u.name AS user, "
-        "(SELECT GROUP_CONCAT(COALESCE(g.code, ''), ',') FROM report_trucks rt JOIN registry g ON g.id = rt.truck_id "
-        " WHERE rt.report_id = r.id) AS trucks, v.code AS verb, s.code AS site "
-        "FROM reports r JOIN users u ON u.id = r.user_id JOIN registry v ON v.id = r.verb_id "
-        "LEFT JOIN registry s ON s.id = r.site_id "
-        "WHERE r.deleted = 0 AND r.remarks != '' AND r.event_time >= ? AND (? IS NULL OR r.event_time < ?) "
-        "ORDER BY r.event_time", (core_iso(sh.start), sh.end and core_iso(sh.end), sh.end and core_iso(sh.end)))]
+    from .registry import Registry
+    from .reports import report_dict
+    reg = Registry(conn)
+    remarks = []
+    for row in conn.execute(
+            "SELECT * FROM reports WHERE deleted = 0 AND remarks != '' AND event_time >= ? "
+            "AND (? IS NULL OR event_time < ?) ORDER BY event_time",
+            (core_iso(sh.start), sh.end and core_iso(sh.end), sh.end and core_iso(sh.end))).fetchall():
+        r = report_dict(conn, reg, row)  # canonical (post-merge) truck/site codes
+        remarks.append({"id": r["id"], "event_time": r["event_time"], "remarks": r["remarks"], "user": r["user"],
+                        "trucks": ",".join(r["trucks"]), "verb": r["verb"], "site": r["site"]})
     return {
         "shift_id": sh.id, "title": title, "open": sh.end is None, "manual": manual, "remarks": remarks,
         "counts": c.__dict__, "text": counts_text(title, c),

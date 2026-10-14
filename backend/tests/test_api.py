@@ -409,3 +409,23 @@ def test_whatsapp_summary_has_final_counts_only_web_has_details(client):
     assert "inf" not in s["text"] and "Inferred" not in s["text"]
     assert s["counts"]["loaded_inf"] == 1 and s["counts"]["notes"]  # detail kept for the web page
     assert [(r["trucks"], r["verb"], r["remarks"], r["user"]) for r in s["remarks"]] == [("A", "LS", "wet paddy", "Ravi")]
+
+
+def test_merged_trolleys_count_as_one(client):
+    boss = login(client, "boss@x.org", "Boss")
+    seed(boss)  # trucks A-D
+    boss.post("/api/shifts/start", json={"at": "2026-10-13T06:00"})
+    boss.post("/api/reports", json={"trucks": ["A"], "verb": "LO", "site": "SOC", "event_time": "2026-10-13T07:00"})
+    boss.post("/api/reports", json={"trucks": ["UP80"], "verb": "LO", "site": "SOC", "event_time": "2026-10-13T09:00",
+                                    "remarks": "new reg"})
+    boss.post("/api/manual", json={"trucks": ["UP80"], "kind": "load", "count": 2})
+    boss.post("/api/reports", json={"trucks": ["A", "UP80"], "verb": "UO", "site": "DAIRY", "event_time": "2026-10-13T10:00"})
+    items = {(i["kind"], i["code"]): i["id"] for i in boss.get("/api/admin/registry").json()}
+    boss.post(f"/api/admin/registry/{items[('truck', 'UP80')]}/merge", json={"into": items[("truck", "A")]})
+
+    s = boss.get("/api/summary/shift").json()
+    assert set(s["counts"]["per_truck"]) == {"A"}  # no separate UP80
+    assert "UP80" not in s["text"] and "Loaded: A*4" in s["text"]  # 2 reported LO + 2 manual
+    assert s["remarks"][0]["trucks"] == "A"
+    assert boss.get("/api/feed").json()[0]["trucks"] == ["A"]  # "A,UP80" report collapses to A
+    assert "Empty" not in s["text"]
