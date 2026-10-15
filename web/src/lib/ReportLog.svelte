@@ -36,6 +36,10 @@
 
   function edit(r) { editing = r; editOpen = true }
   function ask(r) { deleting = r; delOpen = true }
+  async function restore(r) {
+    try { await api.post(`/api/reports/${r.id}/restore`); toast('Report restored'); onChange() } catch (e) { toast(e.message, 'warn') }
+  }
+
   let shiftAct = $state(null) // { action, shift }
   let shiftOpen = $state(false)
   async function doShift() {
@@ -68,7 +72,7 @@
         {#if r.kind === 'shift'}
         <li class="shiftrow">
           <time class="mono">{time(r.event_time)}</time>
-          <div class="main"><p class="line">Shift {r.action === 'start' ? 'started' : 'ended'}{r.action === 'start' && r.shift.default_site ? ` · ${r.shift.default_site}` : ''}</p></div>
+          <div class="main"><p class="line">Shift {r.action === 'start' ? 'started' : 'ended'}{r.action === 'start' && r.shift.sites?.length ? ` · ${r.shift.sites.join(', ')}` : ''}</p></div>
           <div class="side">
             <span class="who">{r.action === 'start' ? r.shift.started_by : r.shift.ended_by}</span>
             {#if me.is_admin}
@@ -77,7 +81,7 @@
           </div>
         </li>
         {:else}
-        <li class:flagged={r.flags.length}>
+        <li class:flagged={r.flags.length && !r.deleted} class:deleted={r.deleted}>
           <time class="mono">{time(r.event_time)}</time>
           <div class="main">
             <p class="line mono">
@@ -92,7 +96,10 @@
           <div class="side">
             {#if showUser}<span class="who">{r.user}</span>{/if}
             {#if r.source === 'wa'}<span class="pill plain">WA</span>{/if}
-            {#if canEdit(r)}
+            {#if r.deleted}
+              <span class="pill warn plain">deleted</span>
+              {#if me.is_admin}<button class="btn quiet sm" onclick={() => restore(r)}>Restore</button>{/if}
+            {:else if canEdit(r)}
               <div class="acts">
                 <button class="btn ghost sm icon" title="Edit" onclick={() => edit(r)}><Icon name="edit" size={15} /></button>
                 <button class="btn ghost sm icon danger" title="Delete" onclick={() => ask(r)}><Icon name="trash" size={15} /></button>
@@ -153,6 +160,8 @@
   .line { display: flex; gap: 8px; flex-wrap: wrap; font-size: 14.5px; font-weight: 600; }
   .verb { color: var(--signal); }
   .half { color: var(--amber); }
+  li.deleted { opacity: .55; }
+  li.deleted .line { text-decoration: line-through; }
   li.shiftrow { background: color-mix(in srgb, var(--paper-2) 70%, transparent); }
   li.shiftrow .line { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink-2); }
   .remark { font-size: 13.5px; color: var(--ink-2); }

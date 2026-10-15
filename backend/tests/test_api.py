@@ -537,3 +537,46 @@ def test_suggestions_follow_each_trucks_last_step(client):
     post("C", "LS", "SKP", "08:00")
     both = sug("A,C")
     assert both["verb"] is None and both["site"] is None
+
+
+def test_shift_view_corrections_and_restore(client):
+    boss = login(client, "boss@x.org", "Boss")
+    ravi = login(client, "ravi@x.org", "Ravi")
+    for code, t in (("SKP", "loading"), ("BG", "unloading")):
+        boss.post("/api/admin/registry", json={"kind": "site", "code": code, "site_type": t})
+    sh = boss.post("/api/shifts/start", json={"site": "SKP", "at": "2026-10-15T06:00"}).json()
+    for t in "ABC":
+        boss.post("/api/reports", json={"trucks": [t], "verb": "LO", "site": "SKP", "event_time": "2026-10-15T07:00"})
+    # subtract: per truck, and shift-level (no truck, no site)
+    assert ravi.post("/api/manual", json={"trucks": ["A"], "kind": "load", "count": 1, "negative": True}).status_code == 403
+    boss.post("/api/manual", json={"trucks": ["A"], "kind": "load", "count": 1, "site": "SKP", "negative": True})
+    boss.post("/api/manual", json={"trucks": [], "kind": "load", "count": 1, "negative": True, "note": "double report"})
+    s = boss.get("/api/summary/shift").json()
+    assert s["counts"]["loaded"] == 1 and "A*" not in s["text"] and "Loaded *1*: SKP 2" in s["text"]
+    listed = boss.get("/api/admin/shifts").json()
+    assert listed[0]["id"] == sh["id"] and listed[0]["loaded"] == 1 and len(listed[0]["manual"]) == 2
+
+    # soft delete + restore of a report
+    r = boss.get("/api/feed").json()[0]
+    boss.delete(f"/api/reports/{r['id']}")
+    assert boss.post(f"/api/reports/{r['id']}/restore").json()["deleted"] is False
+    # soft delete + restore of the whole shift
+    boss.patch(f"/api/shifts/{sh['id']}", json={"deleted": True})
+    assert [x["deleted"] for x in boss.get("/api/admin/shifts").json()] == [True]
+    assert boss.get("/api/admin/shifts?include_deleted=false").json() == []
+    boss.patch(f"/api/shifts/{sh['id']}", json={"deleted": False})
+    assert boss.get("/api/summary/shift").json()["counts"]["loaded"] == 1
+    # registry rows are never removed, only deactivated
+    ids = {i["code"]: i["id"] for i in boss.get("/api/admin/registry").json()}
+    boss.post("/api/admin/registry", json={"kind": "truck", "code": "UNUSED"})
+    ids = {i["code"]: i["id"] for i in boss.get("/api/admin/registry").json()}
+    assert boss.delete(f"/api/admin/registry/{ids['UNUSED']}").json() == {"result": "deactivated"}
+    assert any(i["code"] == "UNUSED" for i in boss.get("/api/admin/registry").json())
+
+
+def test_corrections_never_go_below_zero(client):
+    boss = login(client, "boss@x.org", "Boss")
+    boss.post("/api/shifts/start", json={})
+    boss.post("/api/manual", json={"trucks": [], "kind": "load", "count": 2, "negative": True})
+    c = boss.get("/api/summary/shift").json()["counts"]
+    assert (c["loaded"], c["loaded_abs"]) == (0, 0.0)

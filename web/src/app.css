@@ -73,6 +73,7 @@ button:disabled { cursor: default; }
   background: var(--ink); color: var(--paper); font-weight: 600; letter-spacing: -0.005em; white-space: nowrap;
   transition: transform .12s var(--ease), background .2s, opacity .2s, box-shadow .2s;
 }
+a.btn { text-decoration: none; }
 .btn:active:not(:disabled) { transform: scale(.97); }
 .btn:disabled { opacity: .3; }
 .btn.signal { background: var(--signal); color: var(--signal-ink); }

@@ -50,10 +50,12 @@ def _site(conn, reg: Registry, history: list[trips.Trip], slot: int, last_event)
             if e.site and e.site_type == kind:
                 return e.site
     if kind == "loading":
+        from .reports import shift_sites
         sh = open_shift(conn)
-        d = reg.canon(sh["default_site_id"]) if sh and sh["default_site_id"] else None
-        if d and d.site_type == "loading":
-            return d.code
+        for code in (shift_sites(conn, reg, sh) if sh else []):
+            item = reg.find("site", code, active_only=False)
+            if item and item.site_type == "loading":
+                return code
     shifts = load_shifts(conn)
     usage = site_usage(conn, reg, shifts[-1]) if shifts else {}
     typed = {s["code"]: s for s in reg.listing("site") if s["site_type"] == kind}

@@ -349,6 +349,7 @@ def remove_report(report_id: int, user=Depends(member), conn=Depends(get_conn)):
 
 class ShiftStart(BaseModel):
     site: Optional[str] = None
+    sites: Optional[list[str]] = None  # several sites; the first is the default
     at: Optional[str] = None
 
 
@@ -360,6 +361,7 @@ class ShiftPatch(BaseModel):
     started_at: Optional[str] = None
     ended_at: Optional[str] = None  # "" = reopen
     site: Optional[str] = None
+    sites: Optional[list[str]] = None
     deleted: Optional[bool] = None
 
 
@@ -374,7 +376,7 @@ def list_shifts(limit: int = 50, user=Depends(member), conn=Depends(get_conn)):
 def shift_start(body: ShiftStart, user=Depends(member), conn=Depends(get_conn)):
     try:
         with core.tx(conn):
-            return reports.start_shift(conn, user["id"], body.site, body.at)
+            return reports.start_shift(conn, user["id"], body.site, body.at, body.sites)
     except ValueError as e:
         bad(e)
 
@@ -423,6 +425,7 @@ class ManualIn(BaseModel):
     note: str = ""
     post_fleet: bool = True  # control group always gets it; fleet group only if this is on
     half: bool = False  # half loads: each counts as 1 trolley, ½ in the absolute count
+    negative: bool = False  # correction: subtract (admins); trucks may be empty for a shift-level correction
     shift_id: Optional[int] = None  # default: the open shift
 
 
@@ -431,13 +434,15 @@ def add_manual(body: ManualIn, user=Depends(member), conn=Depends(get_conn)):
     """Any member: count loads/unloads of a truck nobody reported (untracked trucks)."""
     reg = registry.Registry(conn)
     names = [t for t in (body.trucks or [body.truck]) if t and t.strip()]
-    if body.kind not in ("load", "unload") or not 1 <= body.count <= 50 or not names:
+    if body.negative and not user["is_admin"]:
+        raise HTTPException(403, "only admins can subtract")
+    if body.kind not in ("load", "unload") or not 1 <= body.count <= 50 or (not names and not body.negative):
         bad(ValueError("truck(s), kind (load/unload) and a count of 1-50 are required"))
     sh = conn.execute("SELECT id FROM shifts WHERE id = ? AND deleted = 0", (body.shift_id,)).fetchone() \
         if body.shift_id else reports.open_shift(conn)
     if not sh:
         bad(ValueError("no running shift — start one first"))
-    trucks = list(dict.fromkeys((k.code if (k := reg.find("truck", t)) else t.strip().upper()) for t in names))
+    trucks = list(dict.fromkeys((k.code if (k := reg.find("truck", t)) else t.strip().upper()) for t in names)) or [""]
     site = None
     if body.site and body.site.strip():
         s_item = reg.find("site", body.site)
@@ -448,10 +453,10 @@ def add_manual(body: ManualIn, user=Depends(member), conn=Depends(get_conn)):
     with core.tx(conn):
         for truck in trucks:  # one entry per truck: each adds on top, each removable on its own
             cur = conn.execute("INSERT INTO manual_counts (shift_id, truck, kind, count, site, note, post_fleet, half, "
-                               "user_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                               "negative, user_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                                (sh["id"], truck, body.kind, body.count, site, body.note.strip(),
                                 int(body.post_fleet or not user["is_admin"]),  # only admins may skip fleet
-                                int(body.half), user["id"], core.stamp()))
+                                int(body.half), int(body.negative), user["id"], core.stamp()))
             entry = {**dict(conn.execute("SELECT * FROM manual_counts WHERE id = ?", (cur.lastrowid,)).fetchone()),
                      "user": user["name"]}
             core.audit(conn, user["id"], "create", "manual", cur.lastrowid, after=entry)
@@ -472,6 +477,28 @@ def delete_manual(entry_id: int, user=Depends(member), conn=Depends(get_conn)):
         core.audit(conn, user["id"], "delete", "manual", entry_id, before=dict(row))
         core.enqueue(conn, "manual", {"action": "delete", "entry": {**dict(row), "user": user["name"]}})
     return {"ok": True}
+
+
+@app.post("/api/manual/{entry_id}/restore")
+def restore_manual(entry_id: int, user=Depends(admin), conn=Depends(get_conn)):
+    with core.tx(conn):
+        conn.execute("UPDATE manual_counts SET deleted = 0 WHERE id = ?", (entry_id,))
+        core.audit(conn, user["id"], "restore", "manual", entry_id)
+    return {"ok": True}
+
+
+@app.post("/api/reports/{report_id}/restore")
+def restore_report(report_id: int, user=Depends(admin), conn=Depends(get_conn)):
+    """Undo a delete (admins). Nothing is ever removed from the database."""
+    with core.tx(conn):
+        conn.execute("UPDATE reports SET deleted = 0, updated_at = ? WHERE id = ?", (core.stamp(), report_id))
+        core.audit(conn, user["id"], "restore", "report", report_id)
+    return reports.get_report(conn, report_id)
+
+
+@app.get("/api/admin/shifts")
+def admin_shifts(include_deleted: bool = True, user=Depends(admin), conn=Depends(get_conn)):
+    return summary.shift_list(conn, include_deleted)
 
 
 @app.get("/api/summary/range")

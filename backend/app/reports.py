@@ -120,7 +120,11 @@ def sites_by_usage(conn, reg: Registry) -> list[dict]:
     cur_i = next((i for i in range(len(shifts) - 1, -1, -1) if shifts[i].end is None), len(shifts))
     prev = site_usage(conn, reg, shifts[cur_i - 1]) if cur_i >= 1 else {}
     prev2 = site_usage(conn, reg, shifts[cur_i - 2]) if cur_i >= 2 else {}
-    return sorted(sites, key=lambda s: (-prev.get(s["code"], 0), -prev2.get(s["code"], 0)))  # stable sort
+    row = open_shift(conn)
+    mine = shift_sites(conn, reg, row) if row else []
+    first = {code: i for i, code in enumerate(mine)}
+    return sorted(sites, key=lambda s: (first.get(s["code"], len(first)),
+                                        -prev.get(s["code"], 0), -prev2.get(s["code"], 0)))  # stable sort
 
 
 # ── writing ─────────────────────────────────────────────────────────────────
@@ -197,11 +201,29 @@ def _user_name(conn, user_id) -> str:
     return row["name"] or "" if row else ""
 
 
+def shift_sites(conn, reg: Registry, row) -> list[str]:
+    """The shift's sites in order (canonical codes); falls back to the single default site of older shifts."""
+    ids = [r["site_id"] for r in conn.execute("SELECT site_id FROM shift_sites WHERE shift_id = ? ORDER BY sort",
+                                              (row["id"],))]
+    if not ids and row["default_site_id"]:
+        ids = [row["default_site_id"]]
+    return list(dict.fromkeys(c.code for i in ids if (c := reg.canon(i))))
+
+
+def _set_shift_sites(conn, reg: Registry, shift_id: int, sites: list[str], user_id) -> Optional[int]:
+    ids = list(dict.fromkeys(resolve_or_create(conn, reg, "site", s, user_id).id for s in sites if s and s.strip()))
+    conn.execute("DELETE FROM shift_sites WHERE shift_id = ?", (shift_id,))  # link rows only; sites themselves stay
+    for i, site_id in enumerate(ids):
+        conn.execute("INSERT INTO shift_sites (shift_id, site_id, sort) VALUES (?,?,?)", (shift_id, site_id, i))
+    conn.execute("UPDATE shifts SET default_site_id = ? WHERE id = ?", (ids[0] if ids else None, shift_id))
+    return ids[0] if ids else None
+
+
 def shift_dict(conn, reg: Registry, row) -> dict:
-    site = reg.canon(row["default_site_id"])
     keys = row.keys()
+    sites = shift_sites(conn, reg, row)
     return {"id": row["id"], "started_at": row["started_at"], "ended_at": row["ended_at"],
-            "default_site": site.code if site else None, "open": row["ended_at"] is None,
+            "default_site": sites[0] if sites else None, "sites": sites, "open": row["ended_at"] is None,
             "started_by": _user_name(conn, row["started_by"]) if "started_by" in keys and row["started_by"] else "",
             "ended_by": _user_name(conn, row["ended_by"]) if "ended_by" in keys and row["ended_by"] else ""}
 
@@ -224,7 +246,8 @@ def _overlaps(conn, start: str, end: Optional[str], exclude: Optional[int] = Non
     return False
 
 
-def start_shift(conn, user_id: int, site: Optional[str] = None, at: Optional[str] = None) -> dict:
+def start_shift(conn, user_id: int, site: Optional[str] = None, at: Optional[str] = None,
+                sites: Optional[list[str]] = None) -> dict:
     reg = Registry(conn)
     start = minute(at or now())
     cur = open_shift(conn)
@@ -235,9 +258,8 @@ def start_shift(conn, user_id: int, site: Optional[str] = None, at: Optional[str
         end_shift(conn, user_id, at=iso(to_ist(start) - timedelta(minutes=1)))
     if _overlaps(conn, start, None):
         raise ValueError("shift would overlap an existing shift")
-    site_id = resolve_or_create(conn, reg, "site", site, user_id).id if site else None
-    c = conn.execute("INSERT INTO shifts (started_at, default_site_id, started_by) VALUES (?,?,?)",
-                     (start, site_id, user_id))
+    c = conn.execute("INSERT INTO shifts (started_at, started_by) VALUES (?,?)", (start, user_id))
+    _set_shift_sites(conn, reg, c.lastrowid, sites if sites is not None else [site] if site else [], user_id)
     row = conn.execute("SELECT * FROM shifts WHERE id = ?", (c.lastrowid,)).fetchone()
     out = shift_dict(conn, reg, row)
     audit(conn, user_id, "start", "shift", c.lastrowid, after=out)
@@ -261,7 +283,7 @@ def end_shift(conn, user_id: int, at: Optional[str] = None) -> dict:
 
 
 def edit_shift(conn, shift_id: int, user_id: int, started_at=None, ended_at=None, site=None,
-               deleted=None) -> dict:
+               deleted=None, sites=None) -> dict:
     reg = Registry(conn)
     row = conn.execute("SELECT * FROM shifts WHERE id = ?", (shift_id,)).fetchone()
     if not row:
@@ -274,9 +296,10 @@ def edit_shift(conn, shift_id: int, user_id: int, started_at=None, ended_at=None
         raise ValueError("shift would overlap an existing shift")
     if end is None and open_shift(conn) and open_shift(conn)["id"] != shift_id:
         raise ValueError("another shift is already open")
-    site_id = resolve_or_create(conn, reg, "site", site, user_id).id if site else row["default_site_id"]
-    conn.execute("UPDATE shifts SET started_at=?, ended_at=?, default_site_id=?, deleted=? WHERE id=?",
-                 (start, end, site_id, int(deleted if deleted is not None else row["deleted"]), shift_id))
+    conn.execute("UPDATE shifts SET started_at=?, ended_at=?, deleted=? WHERE id=?",
+                 (start, end, int(deleted if deleted is not None else row["deleted"]), shift_id))
+    if sites is not None or site:
+        _set_shift_sites(conn, reg, shift_id, sites if sites is not None else [site], user_id)
     new = conn.execute("SELECT * FROM shifts WHERE id = ?", (shift_id,)).fetchone()
     out = shift_dict(conn, reg, new)
     audit(conn, user_id, "update", "shift", shift_id, before=dict(row), after=out)

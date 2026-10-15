@@ -132,22 +132,14 @@ def edit(conn, item_id: int, user_id, **fields) -> None:
 
 
 def delete(conn, item_id: int, user_id) -> str:
-    """Hard delete only if nothing references the row; otherwise deactivate (history keeps resolving)."""
+    """Never removes rows: 'delete' deactivates (hidden, no longer matches input, history still resolves).
+    Reactivate to undo."""
     row = conn.execute("SELECT * FROM registry WHERE id = ?", (item_id,)).fetchone()
     if not row:
         raise ValueError("not found")
-    used = conn.execute(
-        "SELECT 1 FROM reports WHERE verb_id = :i OR site_id = :i "
-        "UNION SELECT 1 FROM report_trucks WHERE truck_id = :i "
-        "UNION SELECT 1 FROM registry WHERE merged_into = :i "
-        "UNION SELECT 1 FROM shifts WHERE default_site_id = :i LIMIT 1", {"i": item_id}).fetchone()
-    if used:
-        conn.execute("UPDATE registry SET active = 0 WHERE id = ?", (item_id,))
-        audit(conn, user_id, "deactivate", "registry", item_id, before=dict(row))
-        return "deactivated"
-    conn.execute("DELETE FROM registry WHERE id = ?", (item_id,))
-    audit(conn, user_id, "delete", "registry", item_id, before=dict(row))
-    return "deleted"
+    conn.execute("UPDATE registry SET active = 0 WHERE id = ?", (item_id,))
+    audit(conn, user_id, "deactivate", "registry", item_id, before=dict(row))
+    return "deactivated"
 
 
 def admin_listing(reg: Registry) -> list[dict]:

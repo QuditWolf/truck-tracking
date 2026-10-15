@@ -28,7 +28,7 @@ def shift_label(shift: trips.Shift, all_shifts: list[trips.Shift]) -> str:
 
 
 def _sites(d: dict) -> str:
-    return ", ".join(f"{k} {v}" for k, v in sorted(d.items(), key=lambda kv: (-kv[1], kv[0])))
+    return ", ".join(f"{k} {v}" for k, v in sorted(d.items(), key=lambda kv: (-kv[1], kv[0])) if v > 0)
 
 
 # Order of the per-truck lines. A truck can be in "Loading" now and also have loads counted.
@@ -41,12 +41,12 @@ POSITION_LINES = [("loading", "Loading"), ("en_route", "Hauling to unload"), ("l
 def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
     """WhatsApp summary: title / totals (Loaded in *bold*, hauling, Unloaded) / per-truck detail.
     Final counts only; inferred/manual detail lives on the web page."""
-    totals = [f"Loaded *{c.loaded}*" + (f": {_sites(c.loaded_by_site)}" if c.loaded_by_site else "")]
+    totals = [f"Loaded *{c.loaded}*" + (f": {_sites(c.loaded_by_site)}" if _sites(c.loaded_by_site) else "")]
     if hauling := c.position.get("en_route"):
         totals.append(f"Hauling to unload: {len(hauling)} ({','.join(hauling)})")
-    totals.append(f"Unloaded {c.unloaded}" + (f": {_sites(c.unloaded_by_site)}" if c.unloaded_by_site else ""))
+    totals.append(f"Unloaded {c.unloaded}" + (f": {_sites(c.unloaded_by_site)}" if _sites(c.unloaded_by_site) else ""))
 
-    per = {k: " ".join(f"{t}*{p[k]}" for t, p in sorted(c.per_truck.items()) if p[k]) for k in ("loads", "unloads")}
+    per = {k: " ".join(f"{t}*{p[k]}" for t, p in sorted(c.per_truck.items()) if p[k] > 0) for k in ("loads", "unloads")}
     detail = []
     for key, label in POSITION_LINES:
         if key == "en_route":
@@ -107,9 +107,10 @@ def manual_entries(conn, shift_id: int) -> list[dict]:
 
 
 def manual_text(m: dict) -> str:
-    what = f"+{m['count']} load{'s' if m['count'] > 1 else ''}" if m["kind"] == "load" else \
-        f"+{m['count']} unload{'s' if m['count'] > 1 else ''}"
-    return " ".join(x for x in (m["truck"], what, m.get("site") or "", "(half)" if m.get("half") else "") if x)
+    sign = "-" if m.get("negative") else "+"
+    what = f"{sign}{m['count']} {m['kind']}{'s' if m['count'] > 1 else ''}"
+    return " ".join(x for x in (m["truck"] or "Shift", what, m.get("site") or "", "(half)" if m.get("half") else "",
+                                ) if x)
 
 
 def apply_manual(conn, shift_id: int, c: trips.Counts) -> list[dict]:
@@ -122,23 +123,29 @@ def apply_manual(conn, shift_id: int, c: trips.Counts) -> list[dict]:
         known = reg.find("truck", m["truck"], active_only=False)
         if known:
             m["truck"] = known.code
-        n, site = m["count"], m["site"] or "?"
+        n, site = m["count"] * (-1 if m.get("negative") else 1), m["site"] or "?"
         size = n * (0.5 if m.get("half") else 1.0)
-        pt = c.per_truck.setdefault(m["truck"], {"trips": 0, "loads": 0, "unloads": 0})
+        # shift-level corrections (no truck) change totals only
+        pt = c.per_truck.setdefault(m["truck"], {"trips": 0, "loads": 0, "unloads": 0}) if m["truck"] \
+            else {"trips": 0, "loads": 0, "unloads": 0}
         if m["kind"] == "load":
             c.loaded += n
             c.loaded_manual += n
             c.loaded_abs += size
-            c.loaded_by_site[site] = c.loaded_by_site.get(site, 0) + n
+            if m["site"] or n > 0:  # a correction without a site changes the total only
+                c.loaded_by_site[site] = c.loaded_by_site.get(site, 0) + n
             pt["loads"] += n
         else:
             c.unloaded += n
             c.unloaded_manual += n
             c.unloaded_abs += size
-            c.unloaded_by_site[site] = c.unloaded_by_site.get(site, 0) + n
+            if m["site"] or n > 0:
+                c.unloaded_by_site[site] = c.unloaded_by_site.get(site, 0) + n
             pt["unloads"] += n
         from .relay import who
         name = who(conn, m["user"] or "")
+        c.loaded, c.unloaded = max(c.loaded, 0), max(c.unloaded, 0)  # corrections never push a total below 0
+        c.loaded_abs, c.unloaded_abs = max(c.loaded_abs, 0.0), max(c.unloaded_abs, 0.0)
         c.manual.append(manual_text(m) + (f": {m['note']}" if m["note"] else "") + (f" ~{name}" if name else ""))
     return entries
 
@@ -236,3 +243,27 @@ def board(conn) -> dict:
         out.append({"truck": t["code"], "position": pos, "last": last,
                     "trips": len(ts), "loads": sum(1 for x in ts if x.loaded)})
     return {"shift": shift_label(sh, shifts) if sh else None, "open": bool(sh and sh.end is None), "trucks": out}
+
+
+def shift_list(conn, include_deleted: bool = False) -> list[dict]:
+    """Every shift with its loaded/unloaded counts (incl. manual and corrections), newest first."""
+    from .registry import Registry
+    from .reports import shift_dict
+    reg = Registry(conn)
+    a = analysis(conn, reg)
+    rows = conn.execute("SELECT * FROM shifts " + ("" if include_deleted else "WHERE deleted = 0 ") +
+                        "ORDER BY started_at DESC").fetchall()
+    live = load_shifts(conn)
+    out = []
+    for r in rows:
+        d = shift_dict(conn, reg, r)
+        d["deleted"] = bool(r["deleted"])
+        sh = next((x for x in live if x.id == r["id"]), None)
+        c = trips.count(a.segment(sh.id) or trips.Segment(sh), a.flags) if sh else trips.Counts()
+        if sh:
+            apply_manual(conn, sh.id, c)
+            d["title"] = shift_label(sh, live)
+        d.update(loaded=c.loaded, unloaded=c.unloaded, loaded_abs=c.loaded_abs, unloaded_abs=c.unloaded_abs,
+                 manual=manual_entries(conn, r["id"]))
+        out.append(d)
+    return out

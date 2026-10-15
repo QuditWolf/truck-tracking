@@ -95,7 +95,7 @@ def _short(conn, r: dict) -> dict:
 def shift_text(conn, payload: dict) -> str:
     sh, name, action = payload["shift"], who(conn, payload.get("user", "")), payload["action"]
     at = sh["started_at"] if action == "start" else sh["ended_at"]
-    return wa.shift_line(action, at, sh.get("default_site") or "", name)
+    return wa.shift_line(action, at, ",".join(sh.get("sites") or ([sh["default_site"]] if sh.get("default_site") else [])), name)
 
 
 def messages_for(conn, kind: str, payload: dict) -> list[tuple]:
@@ -127,7 +127,8 @@ def _messages_for(conn, kind: str, payload: dict) -> list[tuple]:
         m = payload["entry"]
         line = summary.manual_text(m)
         name = who(conn, m.get("user", ""))
-        note = "\n- ".join(x for x in ("manual add for earlier untracked truck", m.get("note", "")) if x)
+        why = "correction" if m.get("negative") else "manual add for earlier untracked truck"
+        note = "\n- ".join(x for x in (why, m.get("note", "")) if x)
         text = wa.message(line, name, note) if payload["action"] == "add" else \
             f"~{line}~\nmanual add removed" + (f" ~{name}" if name else "")
         # control always; fleet only if the entry asked for it (and fleet relays are on)

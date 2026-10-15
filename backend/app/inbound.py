@@ -90,7 +90,10 @@ def control(conn, msg: dict) -> str:
     try:
         if m:
             _log(conn, msg, "command")
-            reports.start_shift(conn, sender_user(conn, msg), m.group(1).strip().upper() or None, at)
+            reg = Registry(conn)
+            words = m.group(1).strip()
+            sites = [words] if words and reg.find("site", words) else [w for w in words.replace(",", " ").split() if w]
+            reports.start_shift(conn, sender_user(conn, msg), None, at, [w.upper() for w in sites])
             return "shift_start"
         if text in ("shift end", "end shift"):
             _log(conn, msg, "command")
@@ -125,8 +128,9 @@ def fleet(conn, msg: dict) -> str:
     reg = Registry(conn)
     sent = datetime.fromtimestamp(msg.get("ts") or core.now().timestamp(), IST)
     sh = reports.open_shift(conn)
-    d = reg.canon(sh["default_site_id"]) if sh and sh["default_site_id"] else None
-    default_site = d.code if d and d.site_type == "loading" else None  # never default LS/LO to an unloading site
+    loading = [c for c in (reports.shift_sites(conn, reg, sh) if sh else [])
+               if (i := reg.find("site", c, active_only=False)) and i.site_type == "loading"]
+    default_site = loading[0] if len(loading) == 1 else None  # one loading site → use it; several → ask
     p = parse.parse(msg["text"], reg, sent, default_site)
 
     if p.ok:

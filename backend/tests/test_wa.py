@@ -460,3 +460,23 @@ def test_admin_deletes_accidental_shift_with_notice(client, wa):
     assert wa.boss.get("/api/shifts").json() == []
     drain(client)
     assert any(t.startswith("Shift ") and "deleted" in t for t in wa.texts(CONTROL))
+
+
+def test_shift_with_several_sites(client, wa):
+    boss = wa.boss
+    boss.post("/api/admin/registry", json={"kind": "site", "code": "SKP", "site_type": "loading"})
+    sh = boss.post("/api/shifts/start", json={"sites": ["SOC", "SKP", "DAIRY"]}).json()
+    assert sh["sites"] == ["SOC", "SKP", "DAIRY"] and sh["default_site"] == "SOC"
+    assert [s["code"] for s in boss.get("/api/registry").json()["site"]][:3] == ["SOC", "SKP", "DAIRY"]  # shift's sites first
+    assert inbound(client, FLEET, "A LS", "M1") == "unparsed"  # two loading sites: ask, don't guess
+    boss.patch(f"/api/shifts/{sh['id']}", json={"sites": ["SKP", "DAIRY"]})  # edit later
+    assert boss.get("/api/shifts").json()[0]["sites"] == ["SKP", "DAIRY"]
+    assert inbound(client, FLEET, "A LS", "M2") == "event"  # one loading site → filled in
+    assert boss.get("/api/feed").json()[0]["site"] == "SKP"
+    drain(client)
+    assert any(t.startswith("Shift start SOC,SKP,DAIRY @") for t in wa.texts(CONTROL))
+    # control-group command with several sites
+    boss.post("/api/shifts/end", json={})
+    client.app.state.conn.execute("UPDATE shifts SET ended_at = '2026-01-01T00:00:00+05:30', started_at = '2025-12-31T00:00:00+05:30'")
+    assert inbound(client, CONTROL, "shift start skp soc", "C1") == "shift_start"
+    assert boss.get("/api/shifts").json()[0]["sites"] == ["SKP", "SOC"]

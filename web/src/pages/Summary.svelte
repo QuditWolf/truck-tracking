@@ -5,11 +5,12 @@
   import { api, dateTime, halves, time, todayIST, waHtml } from '../lib/api.js'
   import { toast } from '../lib/stores.svelte.js'
 
-  let { tick, registry, me } = $props()
+  let { tick, registry, me, shiftParam = '' } = $props()
 
   let mode = $state('shift')
   let shifts = $state([])
   let shiftId = $state('') // '' = current (open, else latest)
+  $effect(() => { if (shiftParam) { mode = 'shift'; shiftId = shiftParam } })
   let day = $state(todayIST())
   let from = $state(todayIST().slice(0, 8) + '01')
   let to = $state(todayIST())

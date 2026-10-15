@@ -20,9 +20,11 @@
   let me = $state(null)
   let registry = $state(null)
   let tick = $state(0) // bumps after any change so live views refetch
-  let page = $state(location.hash.slice(1) || 'report')
+  const route = () => (location.hash.slice(1) || 'report').split('/')
+  let page = $state(route()[0])
+  let param = $state(route()[1] || '')
 
-  window.addEventListener('hashchange', () => (page = location.hash.slice(1) || 'report'))
+  window.addEventListener('hashchange', () => { [page, param] = [route()[0], route()[1] || ''] })
 
   ;(async () => {
     config = await api.get('/api/config')
@@ -112,9 +114,9 @@
               {:else if page === 'mine'}
                 <Mine {registry} {me} {tick} onChange={refresh} />
               {:else if page === 'summary'}
-                <Summary {tick} {registry} {me} />
+                <Summary {tick} {registry} {me} shiftParam={param} />
               {:else if page === 'admin' && me.is_admin}
-                <Admin onChange={refresh} />
+                <Admin onChange={refresh} {registry} />
               {/if}
             </div>
           {/key}

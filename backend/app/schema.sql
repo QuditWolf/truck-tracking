@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS shifts (
     deleted         INTEGER NOT NULL DEFAULT 0
 );
 
+-- A shift's sites (several possible). shifts.default_site_id mirrors the first one.
+CREATE TABLE IF NOT EXISTS shift_sites (
+    shift_id    INTEGER NOT NULL REFERENCES shifts(id),
+    site_id     INTEGER NOT NULL REFERENCES registry(id),
+    sort        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (shift_id, site_id)
+);
+
 CREATE TABLE IF NOT EXISTS reports (
     id          INTEGER PRIMARY KEY,
     user_id     INTEGER NOT NULL REFERENCES users(id),
@@ -113,6 +121,7 @@ CREATE TABLE IF NOT EXISTS manual_counts (
     note        TEXT NOT NULL DEFAULT '',
     post_fleet  INTEGER NOT NULL DEFAULT 1, -- also relay to the fleet group (control always)
     half        INTEGER NOT NULL DEFAULT 0, -- half loads: count 1 each, ½ each in the absolute count
+    negative    INTEGER NOT NULL DEFAULT 0, -- correction: subtract instead of add
     user_id     INTEGER NOT NULL REFERENCES users(id),
     created_at  TEXT NOT NULL,
     deleted     INTEGER NOT NULL DEFAULT 0

@@ -4,9 +4,10 @@
   import { api, dateTime, localInput } from '../lib/api.js'
   import { toast } from '../lib/stores.svelte.js'
   import Access from './Access.svelte'
+  import ShiftsAdmin from './ShiftsAdmin.svelte'
   import WhatsApp from './WhatsApp.svelte'
 
-  let { onChange } = $props()
+  let { onChange, registry } = $props()
 
   let tab = $state('registry')
   let kind = $state('truck')
@@ -197,26 +198,7 @@
     </div>
 
   {:else if tab === 'shifts'}
-    <div class="card">
-      <div class="table-wrap">
-        <table class="table clickable">
-          <thead><tr><th>Started</th><th>Ended</th><th class="num">Length</th><th>Default site</th><th></th></tr></thead>
-          <tbody>
-            {#each shifts as s (s.id)}
-              <tr onclick={() => openShift(s)}>
-                <td class="mono">{dateTime(s.started_at)}</td>
-                <td class="mono">{#if s.ended_at}{dateTime(s.ended_at)}{:else}<span class="pill live">running</span>{/if}</td>
-                <td class="num">{dur(s)}</td>
-                <td class="mono">{s.default_site || ''}</td>
-                <td class="num"><Icon name="chevron" size={15} /></td>
-              </tr>
-            {:else}
-              <tr><td colspan="5" class="mute">No shifts yet.</td></tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <ShiftsAdmin {registry} {onChange} />
 
   {:else if tab === 'users'}
     <div class="card">

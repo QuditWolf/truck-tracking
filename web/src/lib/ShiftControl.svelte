@@ -1,15 +1,21 @@
 <script>
   import Modal from './Modal.svelte'
+  import Picker from './Picker.svelte'
   import { api, dateTime, localInput, time } from './api.js'
   import { toast } from './stores.svelte.js'
 
   let { shift, sites, onChange } = $props()
   let open = $state(false)
-  let site = $state('')
+  let picked = $state([]) // shift's sites (first = default for reports without a site)
   let at = $state('')
   let error = $state('')
 
-  function show() { site = shift?.default_site || ''; at = ''; error = ''; open = true }
+  async function show() {
+    picked = shift?.sites ? [...shift.sites] : []; at = ''; error = ''; open = true
+    if (!picked.length) {  // pre-select the previous shift's sites
+      try { picked = (await api.get('/api/shifts?limit=1'))[0]?.sites || [] } catch { /* optional */ }
+    }
+  }
 
   async function act(path, body, msg) {
     error = ''
@@ -24,24 +30,19 @@
 
 <button class="shift" class:on={!!shift} onclick={show}>
   <span class="pill" class:live={!!shift} class:warn={!shift}>{shift ? 'Shift' : 'No shift'}</span>
-  {#if shift}<span class="mono txt"><span class="since">since </span>{time(shift.started_at)}{shift.default_site ? ` · ${shift.default_site}` : ''}</span>{/if}
+  {#if shift}<span class="mono txt"><span class="since">since </span>{time(shift.started_at)}{shift.sites?.length ? ` · ${shift.sites.join(',')}` : ''}</span>{/if}
 </button>
 
 <Modal bind:open title={shift ? 'Shift' : 'Start shift'}>
-  {#if shift}<p>Running since <b>{dateTime(shift.started_at)}</b>{shift.default_site ? ` · default site ${shift.default_site}` : ''}.</p>{/if}
-  <label class="field"><span>Default site</span>
-    <select class="select" bind:value={site}>
-      <option value="">None</option>
-      {#each sites as s}<option value={s.code}>{s.code}{s.label !== s.code ? ` — ${s.label}` : ''}</option>{/each}
-    </select>
-  </label>
+  {#if shift}<p>Running since <b>{dateTime(shift.started_at)}</b>{shift.sites?.length ? ` · sites ${shift.sites.join(', ')}` : ''}.</p>{/if}
+  <Picker label="Shift sites (first = default)" options={sites} bind:value={picked} multi variant="labelled" />
   <label class="field"><span>Time · IST <small class="mute">(empty = now)</small></span>
     <input class="input" type="datetime-local" bind:value={at} max={localInput()} />
   </label>
   {#if error}<p class="notice err">{error}</p>{/if}
   {#snippet actions()}
     {#if shift}<button class="btn quiet" onclick={() => act('/api/shifts/end', { at: at || null }, 'Shift ended')}>End shift</button>{/if}
-    <button class="btn signal" onclick={() => act('/api/shifts/start', { site: site || null, at: at || null }, 'Shift started')}>
+    <button class="btn signal" onclick={() => act('/api/shifts/start', { sites: picked, at: at || null }, 'Shift started')}>
       {shift ? 'End & start new' : 'Start shift'}
     </button>
   {/snippet}

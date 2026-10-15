@@ -83,6 +83,7 @@ MIGRATIONS = [
     ("reports", "skip_fleet", "INTEGER NOT NULL DEFAULT 0"),
     ("reports", "half", "INTEGER NOT NULL DEFAULT 0"),
     ("manual_counts", "half", "INTEGER NOT NULL DEFAULT 0"),
+    ("manual_counts", "negative", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
