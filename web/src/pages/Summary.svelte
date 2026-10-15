@@ -2,7 +2,7 @@
   import Icon from '../lib/Icon.svelte'
   import ManualCounts from '../lib/ManualCounts.svelte'
   import Stat from '../lib/Stat.svelte'
-  import { api, dateTime, time, todayIST, waHtml } from '../lib/api.js'
+  import { api, dateTime, halves, time, todayIST, waHtml } from '../lib/api.js'
   import { toast } from '../lib/stores.svelte.js'
 
   let { tick, registry, me } = $props()
@@ -105,8 +105,10 @@
 
   {#if c}
     <div class="stats stagger">
-      <Stat label="Loaded" value={c.loaded} sub={c.loaded_inf ? `${c.loaded_inf} inferred` : 'all reported'} accent />
-      <Stat label="Unloaded" value={c.unloaded} sub={c.unloaded_inf ? `${c.unloaded_inf} inferred` : 'all reported'} />
+      <Stat label="Loaded" value={c.loaded} accent
+        sub={[c.loaded_abs !== c.loaded ? `${halves(c.loaded_abs)} loads (half = ½)` : '', c.loaded_inf ? `${c.loaded_inf} inferred` : ''].filter(Boolean).join(' · ') || 'all reported'} />
+      <Stat label="Unloaded" value={c.unloaded}
+        sub={[c.unloaded_abs !== c.unloaded ? `${halves(c.unloaded_abs)} loads (half = ½)` : '', c.unloaded_inf ? `${c.unloaded_inf} inferred` : ''].filter(Boolean).join(' · ') || 'all reported'} />
       <Stat label="Flags" value={c.flags} sub={c.flags ? 'check reports' : 'clean'} warn={c.flags > 0} />
     </div>
 

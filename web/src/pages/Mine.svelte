@@ -6,9 +6,11 @@
   let { registry, me, tick, onChange } = $props()
   let onlyMine = $state(false) // default: everyone's reports
   let items = $state(null)
+  let shifts = $state([])
   $effect(() => {
     tick
     api.get(onlyMine ? '/api/reports?limit=300' : '/api/reports?mine=false&limit=1000').then((r) => (items = r))
+    api.get('/api/shifts?limit=100').then((s) => (shifts = s))
   })
   const flagged = $derived(items?.filter((r) => r.flags.length).length || 0)
 </script>
@@ -25,7 +27,7 @@
   </div>
   {#if items}
     <!-- edit/delete buttons appear only on your own reports (admins: all) -->
-    <ReportLog {items} {registry} {me} {onChange} showUser={!onlyMine}
+    <ReportLog {items} {registry} {me} {onChange} showUser={!onlyMine} shifts={onlyMine ? [] : shifts}
       empty={onlyMine ? "You haven't reported anything yet." : 'No reports yet.'} />
   {/if}
 </div>

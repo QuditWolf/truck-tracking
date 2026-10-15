@@ -131,7 +131,7 @@ def fleet(conn, msg: dict) -> str:
 
     if p.ok:
         user_id = sender_user(conn, msg)
-        r = reports.create_report(conn, {"trucks": p.trucks, "verb": p.verb, "site": p.site, "remarks": p.remarks,
+        r = reports.create_report(conn, {"trucks": p.trucks, "verb": p.verb, "site": p.site, "remarks": p.remarks, "half": p.half,
                                          "event_time": core.iso(p.time)}, user_id, source="wa", wa_msg_id=msg["id"])
         _log(conn, msg, "event", r["id"])
         a = reports.analysis(conn)

@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS reports (
     deleted     INTEGER NOT NULL DEFAULT 0,
     wa_msg_id   TEXT,                  -- WA message this report was relayed as / parsed from
     skip_fleet  INTEGER NOT NULL DEFAULT 0,  -- admin chose: don't relay this report to the fleet group
+    half        INTEGER NOT NULL DEFAULT 0,  -- half load: counts as 1 trolley, ½ in the absolute count
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -111,6 +112,7 @@ CREATE TABLE IF NOT EXISTS manual_counts (
     site        TEXT,                  -- registry site code
     note        TEXT NOT NULL DEFAULT '',
     post_fleet  INTEGER NOT NULL DEFAULT 1, -- also relay to the fleet group (control always)
+    half        INTEGER NOT NULL DEFAULT 0, -- half loads: count 1 each, ½ each in the absolute count
     user_id     INTEGER NOT NULL REFERENCES users(id),
     created_at  TEXT NOT NULL,
     deleted     INTEGER NOT NULL DEFAULT 0

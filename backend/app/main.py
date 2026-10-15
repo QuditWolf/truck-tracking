@@ -234,9 +234,11 @@ class ReportIn(BaseModel):
     event_time: Optional[str] = None  # IST; default now
     start_shift: bool = False  # no open shift: start one at the event time (user confirmed)
     skip_fleet: bool = False  # admins only: don't relay this report to the fleet group
+    half: bool = False  # half load
 
 
 class ReportPatch(BaseModel):
+    half: Optional[bool] = None
     trucks: Optional[list[str]] = None
     verb: Optional[str] = None
     site: Optional[str] = None
@@ -390,7 +392,12 @@ def shift_end(body: ShiftEnd, user=Depends(member), conn=Depends(get_conn)):
 def shift_edit(shift_id: int, body: ShiftPatch, user=Depends(admin), conn=Depends(get_conn)):
     try:
         with core.tx(conn):
-            return reports.edit_shift(conn, shift_id, user["id"], **body.model_dump())
+            out = reports.edit_shift(conn, shift_id, user["id"], **body.model_dump())
+            if body.deleted:
+                core.enqueue(conn, "notice", {"text": wa.message(f"Shift {summary.time_range(out)} deleted",
+                                                                  relay.who(conn, user["name"])),
+                                              "jids": [core.setting(conn, "control_jid")]})
+            return out
     except ValueError as e:
         bad(e)
 
@@ -415,6 +422,7 @@ class ManualIn(BaseModel):
     site: Optional[str] = None
     note: str = ""
     post_fleet: bool = True  # control group always gets it; fleet group only if this is on
+    half: bool = False  # half loads: each counts as 1 trolley, ½ in the absolute count
     shift_id: Optional[int] = None  # default: the open shift
 
 
@@ -439,11 +447,11 @@ def add_manual(body: ManualIn, user=Depends(member), conn=Depends(get_conn)):
     entries = []
     with core.tx(conn):
         for truck in trucks:  # one entry per truck: each adds on top, each removable on its own
-            cur = conn.execute("INSERT INTO manual_counts (shift_id, truck, kind, count, site, note, post_fleet, user_id, "
-                               "created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            cur = conn.execute("INSERT INTO manual_counts (shift_id, truck, kind, count, site, note, post_fleet, half, "
+                               "user_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                                (sh["id"], truck, body.kind, body.count, site, body.note.strip(),
                                 int(body.post_fleet or not user["is_admin"]),  # only admins may skip fleet
-                                user["id"], core.stamp()))
+                                int(body.half), user["id"], core.stamp()))
             entry = {**dict(conn.execute("SELECT * FROM manual_counts WHERE id = ?", (cur.lastrowid,)).fetchone()),
                      "user": user["name"]}
             core.audit(conn, user["id"], "create", "manual", cur.lastrowid, after=entry)

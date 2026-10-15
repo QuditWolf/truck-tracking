@@ -62,6 +62,11 @@ def original(conn, report_id: int, jid: str) -> dict | None:
             "participant": None if row["direction"] == "out" else row["sender"], "text": row["text"]}
 
 
+def _empty(s: dict) -> bool:
+    c = s.get("counts") or {}
+    return not c.get("loaded") and not c.get("unloaded")
+
+
 def first_name(name: str) -> str:
     return (name or "").split(" ")[0]
 
@@ -115,7 +120,7 @@ def _messages_for(conn, kind: str, payload: dict) -> list[tuple]:
         out = [(j, shift_text(conn, payload), "shift", None, None) for j in targets(conn, "notice")]
         if payload["action"] == "end" and flag(conn, "summary_on_shift_end"):
             s = summary.shift_summary(conn, payload["shift"]["id"])
-            if s:
+            if s and not _empty(s):  # nothing loaded or unloaded: no summary
                 out += [(j, s["text"], "summary", None, None) for j in targets(conn, "summary")]
         return out
     if kind == "manual":
@@ -198,7 +203,7 @@ def tick(conn) -> None:
     if interval > 0 and now - last >= timedelta(minutes=interval):
         s = summary.shift_summary(conn, sh["id"])
         set_setting(conn, "_last_summary_at", core.iso(now))
-        if s and s["text"] != setting(conn, "_last_summary_text"):
+        if s and not _empty(s) and s["text"] != setting(conn, "_last_summary_text"):
             set_setting(conn, "_last_summary_text", s["text"])
             core.enqueue(conn, "notice", {"text": s["text"], "as": "summary"})
 

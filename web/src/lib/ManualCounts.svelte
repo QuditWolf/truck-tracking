@@ -16,11 +16,12 @@
   let site = $state('')
   let note = $state('')
   let postFleet = $state(true)
+  let half = $state(false)
   let busy = $state(false)
   let error = $state('')
 
   function start() {
-    trucks = []; kind = 'load'; count = 1; site = registry.site.find((x) => x.code === registry.shift?.default_site && x.site_type === 'loading')?.code || ''; note = ''; postFleet = true; error = ''
+    trucks = []; kind = 'load'; count = 1; site = registry.site.find((x) => x.code === registry.shift?.default_site && x.site_type === 'loading')?.code || ''; note = ''; postFleet = true; half = false; error = ''
     open = true
   }
 
@@ -28,7 +29,7 @@
     busy = true
     error = ''
     try {
-      await api.post('/api/manual', { trucks, kind, count, site: site || null, note, post_fleet: postFleet, shift_id: shiftId })
+      await api.post('/api/manual', { trucks, kind, count, site: site || null, note, post_fleet: postFleet, half, shift_id: shiftId })
       toast(`${trucks.join(', ')} +${count} ${kind}${count > 1 ? 's' : ''} each`)
       open = false
     } catch (e) {
@@ -71,7 +72,7 @@
     <ul>
       {#each entries as m (m.id)}
         <li>
-          <span class="mono line"><b>{m.truck}</b> +{m.count} {m.kind}{m.count > 1 ? 's' : ''}{m.site ? ` ${m.site}` : ''}</span>
+          <span class="mono line"><b>{m.truck}</b> +{m.count} {m.kind}{m.count > 1 ? 's' : ''}{m.site ? ` ${m.site}` : ''}{m.half ? ' ½' : ''}</span>
           <span class="mute small">{m.note ? `${m.note} · ` : ''}{m.user} · {time(m.created_at)}</span>
           {#if m.user_id === me.id || me.is_admin}
             <button class="btn ghost sm icon danger" title="Remove" onclick={() => remove(m)}><Icon name="trash" size={14} /></button>
@@ -85,6 +86,7 @@
 <Modal bind:open title="Add untracked truck">
   <form class="stack" id="manualform" onsubmit={(e) => { e.preventDefault(); save() }}>
     <Picker label="Trucks" options={registry.truck} bind:value={trucks} multi placeholder="Truck / reg. no." />
+    <div><button type="button" class="btn quiet sm" onclick={() => (trucks = trucks.includes('UNKNOWN') ? trucks : [...trucks, 'UNKNOWN'])}>+ Unknown trolley</button></div>
     <div class="row2">
       <div class="seg">
         <button type="button" class:on={kind === 'load'} onclick={() => (kind = 'load')}>+ Loads</button>
@@ -98,6 +100,7 @@
     </div>
     <Picker label="Site (optional)" options={siteOptions} bind:value={site} variant="labelled" />
     <input class="input" bind:value={note} placeholder="Note — optional" maxlength="120" />
+    <label class="check"><input type="checkbox" bind:checked={half} /> Half load (counts as 1 trolley, ½ in the absolute count)</label>
     {#if me.is_admin}
       <label class="check"><input type="checkbox" checked={!postFleet} onchange={(e) => (postFleet = !e.target.checked)} /> Don't send to fleet group</label>
     {/if}

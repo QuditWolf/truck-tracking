@@ -54,3 +54,6 @@ export function waHtml(text) {
   const esc = (text || '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch])
   return esc.replace(/(^|[\s(])\*([^*\n]+?)\*(?=$|[\s.,:;)!?])/gm, '$1<b>$2</b>')
 }
+
+// 14.5 → "14½"
+export const halves = (n) => (n % 1 ? `${Math.floor(n) || ''}½` : `${n}`)

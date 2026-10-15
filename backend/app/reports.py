@@ -32,6 +32,7 @@ def report_dict(conn, reg: Registry, row) -> dict:
         "deleted": bool(row["deleted"]),
         "wa_msg_id": row["wa_msg_id"],
         "skip_fleet": bool(row["skip_fleet"]) if "skip_fleet" in row.keys() else False,
+        "half": bool(row["half"]) if "half" in row.keys() else False,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -50,7 +51,8 @@ def load_shifts(conn) -> list[trips.Shift]:
 def to_events(reg: Registry, report: dict) -> list[trips.Event]:
     site = reg.find("site", report["site"], active_only=False) if report.get("site") else None
     return [trips.Event(report["id"], t, report["verb"], site.code if site else None,
-                        site.site_type if site else None, to_ist(report["event_time"]), report.get("user", ""))
+                        site.site_type if site else None, to_ist(report["event_time"]), report.get("user", ""),
+                        bool(report.get("half")))
             for t in report["trucks"]]
 
 
@@ -136,7 +138,7 @@ def normalize(conn, reg: Registry, data: dict, user_id) -> dict:
     t = to_ist(data["event_time"]) if data.get("event_time") else now()
     return {"trucks": trucks, "verb": verb.code, "verb_id": verb.id,
             "site": site.code if site else None, "site_id": site.id if site else None,
-            "event_time": minute(t), "remarks": (data.get("remarks") or "").strip()}
+            "event_time": minute(t), "remarks": (data.get("remarks") or "").strip(), "half": bool(data.get("half"))}
 
 
 def _write_trucks(conn, reg: Registry, report_id: int, trucks: list[str]) -> None:
@@ -152,9 +154,10 @@ def create_report(conn, data: dict, user_id: int, source: str = "web", wa_msg_id
     n = normalize(conn, reg, data, user_id)
     ts = stamp()
     cur = conn.execute(
-        "INSERT INTO reports (user_id, source, verb_id, site_id, event_time, remarks, wa_msg_id, skip_fleet, "
-        "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (user_id, source, n["verb_id"], n["site_id"], n["event_time"], n["remarks"], wa_msg_id, int(skip_fleet), ts, ts),
+        "INSERT INTO reports (user_id, source, verb_id, site_id, event_time, remarks, wa_msg_id, skip_fleet, half, "
+        "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (user_id, source, n["verb_id"], n["site_id"], n["event_time"], n["remarks"], wa_msg_id, int(skip_fleet),
+         int(n["half"]), ts, ts),
     )
     rid = cur.lastrowid
     _write_trucks(conn, reg, rid, n["trucks"])
@@ -170,8 +173,8 @@ def update_report(conn, report_id: int, data: dict, user_id: int) -> dict:
     reg = Registry(conn)
     n = normalize(conn, reg, {**before, **{k: v for k, v in data.items() if v is not None}}, user_id)
     conn.execute(
-        "UPDATE reports SET verb_id=?, site_id=?, event_time=?, remarks=?, updated_at=? WHERE id=?",
-        (n["verb_id"], n["site_id"], n["event_time"], n["remarks"], stamp(), report_id),
+        "UPDATE reports SET verb_id=?, site_id=?, event_time=?, remarks=?, half=?, updated_at=? WHERE id=?",
+        (n["verb_id"], n["site_id"], n["event_time"], n["remarks"], int(n["half"]), stamp(), report_id),
     )
     _write_trucks(conn, reg, report_id, n["trucks"])
     after = get_report(conn, report_id)
@@ -196,8 +199,11 @@ def _user_name(conn, user_id) -> str:
 
 def shift_dict(conn, reg: Registry, row) -> dict:
     site = reg.canon(row["default_site_id"])
+    keys = row.keys()
     return {"id": row["id"], "started_at": row["started_at"], "ended_at": row["ended_at"],
-            "default_site": site.code if site else None, "open": row["ended_at"] is None}
+            "default_site": site.code if site else None, "open": row["ended_at"] is None,
+            "started_by": _user_name(conn, row["started_by"]) if "started_by" in keys and row["started_by"] else "",
+            "ended_by": _user_name(conn, row["ended_by"]) if "ended_by" in keys and row["ended_by"] else ""}
 
 
 def open_shift(conn):

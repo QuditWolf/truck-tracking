@@ -9,6 +9,12 @@ from .core import iso as core_iso, now, to_ist
 from .reports import analysis, load_shifts
 
 
+def time_range(sh: dict) -> str:
+    """'15:38-19:04' (or '15:38-now') for a shift dict."""
+    start = to_ist(sh["started_at"])
+    return f"{start:%d %b %H:%M}-" + (f"{to_ist(sh['ended_at']):%H:%M}" if sh.get("ended_at") else "now")
+
+
 def shift_label(shift: trips.Shift, all_shifts: list[trips.Shift]) -> str:
     same_day = [s for s in all_shifts if s.start.date() == shift.start.date()]
     n = sorted(same_day, key=lambda s: s.start).index(shift) + 1
@@ -103,7 +109,7 @@ def manual_entries(conn, shift_id: int) -> list[dict]:
 def manual_text(m: dict) -> str:
     what = f"+{m['count']} load{'s' if m['count'] > 1 else ''}" if m["kind"] == "load" else \
         f"+{m['count']} unload{'s' if m['count'] > 1 else ''}"
-    return " ".join(x for x in (m["truck"], what, m.get("site") or "") if x)
+    return " ".join(x for x in (m["truck"], what, m.get("site") or "", "(half)" if m.get("half") else "") if x)
 
 
 def apply_manual(conn, shift_id: int, c: trips.Counts) -> list[dict]:
@@ -117,15 +123,18 @@ def apply_manual(conn, shift_id: int, c: trips.Counts) -> list[dict]:
         if known:
             m["truck"] = known.code
         n, site = m["count"], m["site"] or "?"
+        size = n * (0.5 if m.get("half") else 1.0)
         pt = c.per_truck.setdefault(m["truck"], {"trips": 0, "loads": 0, "unloads": 0})
         if m["kind"] == "load":
             c.loaded += n
             c.loaded_manual += n
+            c.loaded_abs += size
             c.loaded_by_site[site] = c.loaded_by_site.get(site, 0) + n
             pt["loads"] += n
         else:
             c.unloaded += n
             c.unloaded_manual += n
+            c.unloaded_abs += size
             c.unloaded_by_site[site] = c.unloaded_by_site.get(site, 0) + n
             pt["unloads"] += n
         from .relay import who
@@ -180,7 +189,8 @@ def range_summary(conn, start: date, end: date) -> dict:
         apply_manual(conn, sh.id, c)
         per_shift.append({"shift_id": sh.id, "title": shift_label(sh, load_shifts(conn)),
                           "loaded": c.loaded, "unloaded": c.unloaded})
-        for k in ("loaded", "loaded_inf", "loaded_manual", "reached", "unloaded", "unloaded_inf", "unloaded_manual", "flags"):
+        for k in ("loaded", "loaded_inf", "loaded_manual", "loaded_abs", "reached", "unloaded", "unloaded_inf",
+                  "unloaded_manual", "unloaded_abs", "flags"):
             setattr(total, k, getattr(total, k) + getattr(c, k))
         for attr in ("loaded_by_site", "unloaded_by_site"):
             for site, n in getattr(c, attr).items():

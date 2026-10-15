@@ -5,7 +5,8 @@
   import { api, dateTime, time } from './api.js'
   import { toast } from './stores.svelte.js'
 
-  let { items, registry, me, onChange, showUser = false, empty = 'Nothing reported yet.' } = $props()
+  // shifts: optional — shift start/end shown in the timeline (admins can delete / reopen)
+  let { items, registry, me, onChange, showUser = false, empty = 'Nothing reported yet.', shifts = [] } = $props()
 
   let editing = $state(null)
   let deleting = $state(null)
@@ -13,9 +14,18 @@
   let delOpen = $state(false)
 
   const day = (iso) => dateTime(iso).split(',')[0]
+  const rows = $derived.by(() => {
+    if (!shifts.length || !items.length) return items
+    const oldest = items.at(-1).event_time
+    const marks = shifts.flatMap((sh) => [
+      { kind: 'shift', action: 'start', id: `s${sh.id}`, event_time: sh.started_at, shift: sh },
+      ...(sh.ended_at ? [{ kind: 'shift', action: 'end', id: `e${sh.id}`, event_time: sh.ended_at, shift: sh }] : []),
+    ]).filter((m) => m.event_time >= oldest)
+    return [...items, ...marks].sort((a, b) => (a.event_time < b.event_time ? 1 : a.event_time > b.event_time ? -1 : 0))
+  })
   const groups = $derived.by(() => {
     const out = []
-    for (const r of items) {
+    for (const r of rows) {
       const d = day(r.event_time)
       if (!out.length || out.at(-1).day !== d) out.push({ day: d, rows: [] })
       out.at(-1).rows.push(r)
@@ -26,6 +36,18 @@
 
   function edit(r) { editing = r; editOpen = true }
   function ask(r) { deleting = r; delOpen = true }
+  let shiftAct = $state(null) // { action, shift }
+  let shiftOpen = $state(false)
+  async function doShift() {
+    shiftOpen = false
+    const { action, shift } = shiftAct
+    try {
+      await api.patch(`/api/shifts/${shift.id}`, action === 'start' ? { deleted: true } : { ended_at: '' })
+      toast(action === 'start' ? 'Shift deleted' : 'Shift reopened')
+      onChange()
+    } catch (e) { toast(e.message, 'warn') }
+  }
+
   async function remove() {
     delOpen = false
     await api.del(`/api/reports/${deleting.id}`)
@@ -43,6 +65,18 @@
     <h4 class="eyebrow">{g.day}</h4>
     <ul class="stagger">
       {#each g.rows as r (r.id)}
+        {#if r.kind === 'shift'}
+        <li class="shiftrow">
+          <time class="mono">{time(r.event_time)}</time>
+          <div class="main"><p class="line">Shift {r.action === 'start' ? 'started' : 'ended'}{r.action === 'start' && r.shift.default_site ? ` · ${r.shift.default_site}` : ''}</p></div>
+          <div class="side">
+            <span class="who">{r.action === 'start' ? r.shift.started_by : r.shift.ended_by}</span>
+            {#if me.is_admin}
+              <button class="btn ghost sm danger" onclick={() => { shiftAct = r; shiftOpen = true }}>{r.action === 'start' ? 'Delete shift' : 'Reopen'}</button>
+            {/if}
+          </div>
+        </li>
+        {:else}
         <li class:flagged={r.flags.length}>
           <time class="mono">{time(r.event_time)}</time>
           <div class="main">
@@ -50,6 +84,7 @@
               <span>{r.trucks.join(',')}</span>
               <span class="verb">{r.verb}</span>
               {#if r.site}<span>{r.site}</span>{/if}
+              {#if r.half}<span class="half">½</span>{/if}
             </p>
             {#if r.remarks}<p class="remark">{r.remarks}</p>{/if}
             {#each r.flags as f}<p class="flag"><Icon name="warn" size={13} />{f}</p>{/each}
@@ -65,6 +100,7 @@
             {/if}
           </div>
         </li>
+        {/if}
       {/each}
     </ul>
   </section>
@@ -76,6 +112,18 @@
       <ReportForm {registry} report={editing} {me} onDone={(r) => { editOpen = false; if (r) { toast('Report updated'); onChange() } }} />
     {/key}
   {/if}
+</Modal>
+
+<Modal bind:open={shiftOpen} title={shiftAct?.action === 'start' ? 'Delete this shift?' : 'Reopen this shift?'}>
+  {#if shiftAct?.action === 'start'}
+    <p>The shift that started {dateTime(shiftAct.shift.started_at)} is removed. Its reports stay, but no longer belong to a shift.</p>
+  {:else if shiftAct}
+    <p>The shift becomes open again (fails if another shift is running).</p>
+  {/if}
+  {#snippet actions()}
+    <button class="btn ghost" onclick={() => (shiftOpen = false)}>Cancel</button>
+    <button class="btn signal" onclick={doShift}>{shiftAct?.action === 'start' ? 'Delete shift' : 'Reopen'}</button>
+  {/snippet}
 </Modal>
 
 <Modal bind:open={delOpen} title="Delete report?">
@@ -104,6 +152,9 @@
   .main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .line { display: flex; gap: 8px; flex-wrap: wrap; font-size: 14.5px; font-weight: 600; }
   .verb { color: var(--signal); }
+  .half { color: var(--amber); }
+  li.shiftrow { background: color-mix(in srgb, var(--paper-2) 70%, transparent); }
+  li.shiftrow .line { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink-2); }
   .remark { font-size: 13.5px; color: var(--ink-2); }
   .flag { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--amber); }
   .side { display: flex; align-items: center; gap: 8px; }

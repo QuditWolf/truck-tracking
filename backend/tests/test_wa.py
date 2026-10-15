@@ -189,16 +189,16 @@ def test_periodic_summary_only_when_changed(client, wa):
     drain(client)
     assert summaries() == []  # no summary before one interval has passed
     conn.execute("UPDATE shifts SET started_at = '2026-01-01T06:00:00+05:30'")
-    drain(client)  # interval elapsed: summary sent (+ one stale-shift warning)
-    assert len(summaries()) == 1
+    drain(client)  # interval elapsed but nothing loaded/unloaded → no summary (+ one stale-shift warning)
+    assert summaries() == []
     assert sum("send 'shift end'" in t for t in wa.texts(CONTROL)) == 1
-    core.set_setting(conn, "_last_summary_at", "2000-01-01T00:00:00+05:30")
-    drain(client)  # interval elapsed but nothing changed → no resend, no second warning
-    assert len(summaries()) == 1 and sum("send 'shift end'" in t for t in wa.texts(CONTROL)) == 1
-    wa.boss.post("/api/reports", json={"trucks": ["A"], "verb": "LS", "site": "SOC"})
+    wa.boss.post("/api/reports", json={"trucks": ["A"], "verb": "LO", "site": "SOC"})
     core.set_setting(conn, "_last_summary_at", "2000-01-01T00:00:00+05:30")
     drain(client)
-    assert len(summaries()) == 2 and "Loading: A" in summaries()[-1]
+    assert len(summaries()) == 1 and "Hauling to unload: 1 (A)" in summaries()[-1]
+    core.set_setting(conn, "_last_summary_at", "2000-01-01T00:00:00+05:30")
+    drain(client)  # interval elapsed, nothing changed → no resend, no second warning
+    assert len(summaries()) == 1 and sum("send 'shift end'" in t for t in wa.texts(CONTROL)) == 1
 
 
 def test_parse_strict():
@@ -428,3 +428,35 @@ def test_admin_can_keep_a_report_out_of_the_fleet_group(client, wa):
     assert any(t.startswith("A LS SOC") for t in control) and any("~LS~ LO" in t for t in control)
     assert any(t.startswith("B LS SOC") for t in fleet)  # non-admin skip ignored
     assert any(t.startswith("Q +1 load") for t in fleet)  # non-admin can't skip fleet for manual either
+
+
+def test_half_loads_and_unknown_trolleys(client, wa):
+    boss = wa.boss
+    boss.post("/api/shifts/start", json={"site": "SOC"})
+    r = boss.post("/api/reports", json={"trucks": ["A"], "verb": "LO", "site": "SOC", "half": True}).json()
+    assert r["half"] is True
+    boss.post("/api/reports", json={"trucks": ["A"], "verb": "UO", "site": "DAIRY"})
+    boss.post("/api/reports", json={"trucks": ["B"], "verb": "LO", "site": "SOC"})
+    # "1 trolly half loaded left SKP @15:30, unloaded at BG": unknown trolley, half, not in the fleet group
+    for kind, site in (("load", "SOC"), ("unload", "DAIRY")):
+        boss.post("/api/manual", json={"trucks": ["Unknown"], "kind": kind, "count": 1, "site": site,
+                                       "half": True, "post_fleet": False})
+    s = boss.get("/api/summary/shift").json()
+    c = s["counts"]
+    assert (c["loaded"], c["loaded_abs"]) == (3, 2.0)        # A½ + B + unknown½ = 3 trolleys, 2 loads
+    assert (c["unloaded"], c["unloaded_abs"]) == (2, 1.0)    # A½ + unknown½
+    assert "Loaded *3*" in s["text"] and "UNKNOWN*1" in s["text"]
+    drain(client)
+    assert any(t.startswith("A LO SOC") and "- half load" in t for t in wa.texts(FLEET))
+    assert not any(t.startswith("UNKNOWN") for t in wa.texts(FLEET))
+    assert any(t.startswith("UNKNOWN +1 load SOC (half)") for t in wa.texts(CONTROL))
+    assert inbound(client, FLEET, "C LO SOC half", "H1") == "event"
+    assert boss.get("/api/feed").json()[0]["half"] is True
+
+
+def test_admin_deletes_accidental_shift_with_notice(client, wa):
+    sh = wa.boss.post("/api/shifts/start", json={}).json()
+    assert wa.boss.patch(f"/api/shifts/{sh['id']}", json={"deleted": True}).status_code == 200
+    assert wa.boss.get("/api/shifts").json() == []
+    drain(client)
+    assert any(t.startswith("Shift ") and "deleted" in t for t in wa.texts(CONTROL))

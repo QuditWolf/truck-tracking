@@ -102,6 +102,14 @@ per shift, optional site and note. Free-text trucks stay out of the registry. Co
 shift totals and shown separately (`Loaded 16 (2 inf, 2 manual)`), listed under `Manual:`,
 relayed like reports, deletable by the author or an admin, audited.
 
+## Half loads, unknown trolleys
+
+- `half` flag on reports (web toggle "½ Half", WhatsApp word "half") and on untracked-truck entries.
+  Summaries count trolleys (a half load = 1); `loaded_abs` / `unloaded_abs` count loads (half = ½),
+  shown on the web page and in the API. A trip with any half report counts ½ for load and unload.
+- Untracked trucks: "+ Unknown trolley" adds standalone UNKNOWN entries (never merged into a fake truck).
+- Periodic and end-of-shift summaries are not sent when nothing was loaded or unloaded.
+
 ## Names in WhatsApp
 
 Signatures use the first name unless another user shares it; then the full name; if full names

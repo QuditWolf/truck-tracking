@@ -39,14 +39,22 @@ def message(content: str, user: str = "", remarks: str = "", warnings=()) -> str
     return "\n".join(lines)
 
 
+def _remarks(r: dict) -> str:
+    """Report remarks, with 'half load' added when the report is flagged half and doesn't already say so."""
+    rem = r.get("remarks") or ""
+    if r.get("half") and "half" not in rem.lower():
+        rem = "; ".join(x for x in ("half load", rem) if x)
+    return rem
+
+
 def line(r: dict, warnings=()) -> str:
-    return message(_join(_fields(r)), r.get("user", ""), r.get("remarks", ""), warnings)
+    return message(_join(_fields(r)), r.get("user", ""), _remarks(r), warnings)
 
 
 def edit_line(before: dict, after: dict) -> str:
     parts = [new if old == new else _join([f"~{old}~" if old else "", new])
              for old, new in zip(_fields(before), _fields(after))]
-    old_r, new_r = before.get("remarks") or "", after.get("remarks") or ""
+    old_r, new_r = _remarks(before), _remarks(after)
     remarks = new_r if old_r == new_r else _join([f"~{old_r}~" if old_r else "", new_r])
     return message(_join(parts), after.get("user", ""), remarks)
 

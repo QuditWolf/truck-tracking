@@ -41,6 +41,7 @@ class Event:
     site_type: Optional[str]  # loading | unloading | depot | None (unknown)
     time: datetime
     user: str = ""
+    half: bool = False  # half load
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,11 @@ class Trip:
     @property
     def last(self) -> int:
         return max(self.slots)
+
+    @property
+    def size(self) -> float:
+        """1 for a full load, 0.5 if any report in this trip says half load (for the absolute count)."""
+        return 0.5 if any(e.half for e in self.slots.values()) else 1.0
 
     @property
     def loaded(self) -> Optional[str]:
@@ -321,6 +327,8 @@ class Counts:
     unloaded: int = 0
     unloaded_inf: int = 0
     unloaded_manual: int = 0
+    loaded_abs: float = 0.0    # absolute loads: half loads count ½ (trolley counts above count them as 1)
+    unloaded_abs: float = 0.0
     loaded_by_site: dict[str, int] = field(default_factory=dict)
     unloaded_by_site: dict[str, int] = field(default_factory=dict)
     position: dict[str, list[str]] = field(default_factory=dict)  # see POSITION
@@ -337,6 +345,7 @@ def count(seg: Segment, flags: dict[tuple[int, str], list[Flag]]) -> Counts:
         for t in trips:
             if t.loaded:
                 c.loaded += 1
+                c.loaded_abs += t.size
                 c.loaded_inf += t.loaded == "inf"
                 site = t.load_site or "?"
                 c.loaded_by_site[site] = c.loaded_by_site.get(site, 0) + 1
@@ -346,6 +355,7 @@ def count(seg: Segment, flags: dict[tuple[int, str], list[Flag]]) -> Counts:
                 c.reached += 1
             if t.unloaded:
                 c.unloaded += 1
+                c.unloaded_abs += t.size
                 c.unloaded_inf += t.unloaded == "inf"
                 site = t.unload_site or "?"
                 c.unloaded_by_site[site] = c.unloaded_by_site.get(site, 0) + 1

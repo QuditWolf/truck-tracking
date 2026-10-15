@@ -10,7 +10,9 @@
 
   const tiles = $derived([
     ...options.map((o) => ({ code: o.code, sub: variant === 'code' ? '' : o.label !== o.code ? o.label : '', title: [o.label, o.plate].filter(Boolean).join(' · ') })),
-    ...extra.filter((e) => !options.some((o) => o.code === e)).map((code) => ({ code, sub: 'new', isNew: true })),
+    ...[...extra, ...(multi ? value : value ? [value] : []).filter((v) => !extra.includes(v))]
+      .filter((e, i, all) => all.indexOf(e) === i && !options.some((o) => o.code === e))
+      .map((code) => ({ code, sub: 'new', isNew: true })),
   ])
   // Long codes (e.g. registration numbers) take 2–3 grid columns instead of overflowing.
   const span = (code) => {

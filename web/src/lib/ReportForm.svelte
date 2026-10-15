@@ -21,6 +21,7 @@
   let sSite = $state('')
   let remarks = $state(r0?.remarks || '')
   let skipFleet = $state(false) // admins only: keep this report out of the fleet group
+  let half = $state(r0?.half || false)
   let advanced = $state(false)
   let when = $state(r0 ? localInput(r0.event_time) : '')
   const initialWhen = untrack(() => when)
@@ -34,7 +35,7 @@
   const effVerb = $derived(verb || sVerb)
   const effSite = $derived(site || sSite)
   const draft = $derived({
-    trucks, verb: effVerb, site: effSite || null, remarks,
+    trucks, verb: effVerb, site: effSite || null, remarks, half,
     event_time: when && when !== initialWhen ? when : r0 ? r0.event_time : null,
   })
   const ready = $derived(trucks.length > 0 && !!effVerb)
@@ -115,7 +116,7 @@
     try {
       const body = { ...draft, ...(startShift ? { start_shift: true } : {}), ...(skipFleet ? { skip_fleet: true } : {}) }
       const r = r0 ? await api.patch(`/api/reports/${r0.id}`, body) : await api.post('/api/reports', body)
-      if (!r0) { trucks = []; verb = ''; site = ''; remarks = ''; when = ''; advanced = false; skipFleet = false }
+      if (!r0) { trucks = []; verb = ''; site = ''; remarks = ''; when = ''; advanced = false; skipFleet = false; half = false }
       onDone(r, startShift)
     } catch (e) {
       error = e.message
@@ -134,6 +135,8 @@
 
     <div class="extras">
       <input class="input" bind:value={remarks} placeholder="Remarks — optional" maxlength="200" />
+      <button type="button" class="btn quiet halfbtn" class:on={half} aria-pressed={half} title="Half load: counts as 1 trolley, ½ in the absolute count"
+              onclick={() => (half = !half)}>½ Half</button>
       {#if !advanced && !r0}
         <button type="button" class="btn quiet when" title="Set a different event time"
                 onclick={() => { advanced = true; when = when || localInput() }}>
@@ -163,6 +166,7 @@
         <span>{trucks.join(',')}</span>
         <span class="t-verb">{effVerb}</span>
         {#if effSite}<span>{effSite}</span>{/if}
+        {#if half}<span class="t-half">½</span>{/if}
         <span class="t-dim">@{shownTime}</span>
         {#if me}<span class="t-user">~{me.signature || me.name.split(' ')[0]}</span>{/if}
       {:else}
@@ -198,6 +202,9 @@
   .extras { display: flex; gap: 8px; }
   .extras .input { flex: 1; }
   .when { height: 44px; }
+  .halfbtn { height: 44px; }
+  .halfbtn.on { background: var(--ink); color: var(--paper); box-shadow: none; }
+  .t-half { color: var(--amber); }
   .when-row { display: flex; align-items: flex-end; gap: 8px; }
   .when-row .btn { height: 44px; }
 

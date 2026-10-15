@@ -38,6 +38,7 @@ class Parsed:
     time: Optional[datetime] = None
     remarks: str = ""
     missing: list[str] = field(default_factory=list)
+    half: bool = False
 
 
 def _tokens(text: str) -> list[str]:
@@ -116,6 +117,8 @@ def parse(text: str, reg: Registry, sent: datetime, default_site: Optional[str] 
     sent = sent.astimezone(IST)
     content, remark_lines, extra = split_lines(text)
     toks, when = take_time(_tokens(content), sent)
+    half = any(t.lower() in ("half", "½", "1/2") for t in toks)
+    toks = [t for t in toks if t.lower() not in ("half", "½", "1/2")]
     toks = normalize(toks, reg)
     remarks = "; ".join(remark_lines)
 
@@ -149,8 +152,8 @@ def parse(text: str, reg: Registry, sent: datetime, default_site: Optional[str] 
         missing.append("format")
     site_code = site.code if site else (default_site if uses_default else None)
     if missing or (verb and i + 1 + len(rest) != len(toks)):
-        return Parsed(False, trucks, verb.code if verb else None, site_code, when, remarks, missing or ["format"])
-    return Parsed(True, trucks, verb.code, site_code, when or sent.replace(second=0, microsecond=0), remarks)
+        return Parsed(False, trucks, verb.code if verb else None, site_code, when, remarks, missing or ["format"], half)
+    return Parsed(True, trucks, verb.code, site_code, when or sent.replace(second=0, microsecond=0), remarks, half=half)
 
 
 def looks_like_event(text: str, reg: Registry) -> bool:
