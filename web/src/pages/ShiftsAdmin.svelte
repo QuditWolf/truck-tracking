@@ -52,11 +52,36 @@
   const restore = (s) => run(() => api.patch(`/api/shifts/${s.id}`, { deleted: false }), 'Shift restored')
   const reopen = (s) => run(() => api.patch(`/api/shifts/${s.id}`, { ended_at: '' }), 'Shift reopened')
 
+  // record a past shift that wasn't tracked in detail: times, sites, and totals (unnamed or per truck)
+  let rec = $state(null)
+  let recOpen = $state(false)
+  function openRec() {
+    rec = { started_at: '', ended_at: '', sites: [], loads: 0, loadSite: '', unloads: 0, unloadSite: '', trucks: [], note: '', quiet: true }
+    recOpen = true
+  }
+  async function saveRec() {
+    const r = rec
+    try {
+      const sh = await api.post('/api/admin/shifts', { started_at: r.started_at, ended_at: r.ended_at, sites: r.sites })
+      const add = (kind, count, site) => count > 0 && api.post('/api/manual', {
+        shift_id: sh.id, trucks: r.trucks, kind, count, site: site || null, note: r.note || 'recorded later', post_fleet: !r.quiet })
+      await add('load', r.loads, r.loadSite)
+      await add('unload', r.unloads, r.unloadSite)
+      recOpen = false
+      toast('Shift recorded')
+      await load()
+      onChange?.()
+    } catch (e) { toast(e.message, 'warn') }
+  }
+
   const siteFits = (kind) => registry.site.filter((x) => (kind === 'load' ? x.site_type !== 'unloading' : x.site_type !== 'loading'))
 </script>
 
 <div class="shifts">
-  <label class="check"><input type="checkbox" bind:checked={showDeleted} /> Show deleted shifts</label>
+  <div class="bar">
+    <label class="check"><input type="checkbox" bind:checked={showDeleted} /> Show deleted shifts</label>
+    <button class="btn signal sm" onclick={openRec}><Icon name="plus" size={14} />New shift</button>
+  </div>
 
   {#each shifts as s (s.id)}
     <section class="card shift" class:deleted={s.deleted}>
@@ -107,6 +132,36 @@
   {/each}
 </div>
 
+<Modal bind:open={recOpen} title="Record a past shift">
+  {#if rec}
+    <p class="mute small">For a shift that happened without detailed tracking.</p>
+    <div class="two">
+      <label class="field"><span>Started · IST</span><input class="input" type="datetime-local" bind:value={rec.started_at} /></label>
+      <label class="field"><span>Ended · IST</span><input class="input" type="datetime-local" bind:value={rec.ended_at} /></label>
+    </div>
+    <Picker label="Sites" options={registry.site} bind:value={rec.sites} multi variant="labelled" />
+    <div class="two">
+      <label class="field"><span>Loads</span><input class="input mono" type="number" min="0" max="50" bind:value={rec.loads} /></label>
+      <label class="field"><span>at loading site</span>
+        <select class="select" bind:value={rec.loadSite}><option value="">—</option>
+          {#each siteFits('load') as x}<option value={x.code}>{x.code}</option>{/each}</select></label>
+      <label class="field"><span>Unloads</span><input class="input mono" type="number" min="0" max="50" bind:value={rec.unloads} /></label>
+      <label class="field"><span>at unloading site</span>
+        <select class="select" bind:value={rec.unloadSite}><option value="">—</option>
+          {#each siteFits('unload') as x}<option value={x.code}>{x.code}</option>{/each}</select></label>
+    </div>
+    <Picker label="Trucks (empty = unknown trolley)" options={registry.truck} bind:value={rec.trucks} multi placeholder="Truck / reg. no." />
+    {#if rec.trucks.length > 1}<p class="mute small">Each selected truck gets these counts.</p>{/if}
+    <input class="input" bind:value={rec.note} placeholder="Note (e.g. from the paper register)" maxlength="120" />
+    <label class="check"><input type="checkbox" bind:checked={rec.quiet} /> Don't send to fleet group</label>
+    <p class="mute small">The control group is told about the counts. More can be added afterwards with + Add.</p>
+  {/if}
+  {#snippet actions()}
+    <button class="btn ghost" onclick={() => (recOpen = false)}>Cancel</button>
+    <button class="btn signal" disabled={!rec?.started_at || !rec?.ended_at} onclick={saveRec}>Record shift</button>
+  {/snippet}
+</Modal>
+
 <Modal bind:open={editOpen} title="Edit shift">
   {#if edit}
     <label class="field"><span>Started · IST</span><input class="input" type="datetime-local" bind:value={edit.started_at} /></label>
@@ -150,6 +205,10 @@
 <style>
   .shifts { display: flex; flex-direction: column; gap: 12px; max-width: 900px; }
   .shift.deleted { opacity: .6; }
+  .bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .two :global(.input), .two :global(.select) { min-width: 0; }
+  @media (max-width: 480px) { .two { grid-template-columns: minmax(0, 1fr); } }
   .t { display: flex; flex-direction: column; gap: 3px; }
   .small { font-size: 12.5px; }
   .nums { display: flex; gap: 28px; margin-bottom: 10px; }

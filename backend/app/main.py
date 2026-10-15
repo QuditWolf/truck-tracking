@@ -436,13 +436,16 @@ def add_manual(body: ManualIn, user=Depends(member), conn=Depends(get_conn)):
     names = [t for t in (body.trucks or [body.truck]) if t and t.strip()]
     if body.negative and not user["is_admin"]:
         raise HTTPException(403, "only admins can subtract")
-    if body.kind not in ("load", "unload") or not 1 <= body.count <= 50 or (not names and not body.negative):
+    # unnamed counts (no truck) — totals only — are for admins: corrections and recorded past shifts
+    if body.kind not in ("load", "unload") or not 1 <= body.count <= 50 or (not names and not user["is_admin"]):
         bad(ValueError("truck(s), kind (load/unload) and a count of 1-50 are required"))
     sh = conn.execute("SELECT id FROM shifts WHERE id = ? AND deleted = 0", (body.shift_id,)).fetchone() \
         if body.shift_id else reports.open_shift(conn)
     if not sh:
         bad(ValueError("no running shift — start one first"))
-    trucks = list(dict.fromkeys((k.code if (k := reg.find("truck", t)) else t.strip().upper()) for t in names)) or [""]
+    trucks = list(dict.fromkeys((k.code if (k := reg.find("truck", t)) else t.strip().upper()) for t in names))
+    if not trucks:  # no truck given: an unknown trolley (adds), or the shift total (corrections)
+        trucks = [""] if body.negative else ["UNKNOWN"]
     site = None
     if body.site and body.site.strip():
         s_item = reg.find("site", body.site)
@@ -494,6 +497,22 @@ def restore_report(report_id: int, user=Depends(admin), conn=Depends(get_conn)):
         conn.execute("UPDATE reports SET deleted = 0, updated_at = ? WHERE id = ?", (core.stamp(), report_id))
         core.audit(conn, user["id"], "restore", "report", report_id)
     return reports.get_report(conn, report_id)
+
+
+class PastShiftIn(BaseModel):
+    started_at: str
+    ended_at: str
+    sites: list[str] = []
+
+
+@app.post("/api/admin/shifts")
+def admin_shift_create(body: PastShiftIn, user=Depends(admin), conn=Depends(get_conn)):
+    """Record a past shift (closed). Counts are then added with /api/manual (shift_id)."""
+    try:
+        with core.tx(conn):
+            return reports.create_past_shift(conn, user["id"], body.started_at, body.ended_at, body.sites)
+    except ValueError as e:
+        bad(e)
 
 
 @app.get("/api/admin/shifts")

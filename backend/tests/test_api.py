@@ -580,3 +580,22 @@ def test_corrections_never_go_below_zero(client):
     boss.post("/api/manual", json={"trucks": [], "kind": "load", "count": 2, "negative": True})
     c = boss.get("/api/summary/shift").json()["counts"]
     assert (c["loaded"], c["loaded_abs"]) == (0, 0.0)
+
+
+def test_admin_records_a_past_shift_with_counts(client):
+    boss = login(client, "boss@x.org", "Boss")
+    for code, t in (("SKP", "loading"), ("BG", "unloading")):
+        boss.post("/api/admin/registry", json={"kind": "site", "code": code, "site_type": t})
+    running = boss.post("/api/shifts/start", json={"at": "2026-10-15T06:00"}).json()
+    sh = boss.post("/api/admin/shifts", json={"started_at": "2026-10-14T20:00", "ended_at": "2026-10-15T02:00",
+                                              "sites": ["SKP"]}).json()
+    assert sh["ended_at"] and sh["sites"] == ["SKP"]
+    assert boss.get("/api/shifts").json()[0]["id"] == running["id"] and boss.get("/api/shifts").json()[0]["open"]
+    assert boss.post("/api/admin/shifts", json={"started_at": "2026-10-15T01:00", "ended_at": "2026-10-15T07:00"}).status_code == 400
+    boss.post("/api/manual", json={"shift_id": sh["id"], "trucks": [], "kind": "load", "count": 6, "site": "SKP", "post_fleet": False})
+    boss.post("/api/manual", json={"shift_id": sh["id"], "trucks": ["A"], "kind": "unload", "count": 2, "site": "BG", "post_fleet": False})
+    s = boss.get(f"/api/summary/shift?shift_id={sh['id']}").json()
+    assert "Loaded *6*: SKP 6" in s["text"] and "Unloaded 2: BG 2" in s["text"] and "Unloaded: A*2" in s["text"]
+    assert "Loaded: UNKNOWN*6" in s["text"]  # no truck given → unknown trolley
+    u = login(client, "u@x.org", "U")
+    assert u.post("/api/manual", json={"trucks": [], "kind": "load", "count": 1}).status_code == 400  # unnamed: admins only

@@ -267,6 +267,24 @@ def start_shift(conn, user_id: int, site: Optional[str] = None, at: Optional[str
     return out
 
 
+def create_past_shift(conn, user_id: int, started_at: str, ended_at: str, sites: list[str]) -> dict:
+    """Admin: record a shift that already happened (closed). Doesn't touch the running shift; no overlaps."""
+    reg = Registry(conn)
+    start, end = minute(started_at), minute(ended_at)
+    if to_ist(end) < to_ist(start):
+        raise ValueError("shift must end after it started")
+    if to_ist(end) > now():
+        raise ValueError("a recorded shift must have ended already")
+    if _overlaps(conn, start, end):
+        raise ValueError("shift would overlap an existing shift")
+    c = conn.execute("INSERT INTO shifts (started_at, ended_at, started_by, ended_by) VALUES (?,?,?,?)",
+                     (start, end, user_id, user_id))
+    _set_shift_sites(conn, reg, c.lastrowid, sites, user_id)
+    out = shift_dict(conn, reg, conn.execute("SELECT * FROM shifts WHERE id = ?", (c.lastrowid,)).fetchone())
+    audit(conn, user_id, "create", "shift", c.lastrowid, after=out)
+    return out
+
+
 def end_shift(conn, user_id: int, at: Optional[str] = None) -> dict:
     cur = open_shift(conn)
     if not cur:

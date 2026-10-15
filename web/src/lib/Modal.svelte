@@ -35,7 +35,8 @@
   h3 { font-size: 17px; }
   /* tall content scrolls inside the sheet; title and buttons stay put */
   .body { color: var(--ink-2); font-size: 14.5px; display: flex; flex-direction: column; gap: 10px;
-          overflow-y: auto; min-height: 0; margin: 0 -22px; padding: 2px 22px; overscroll-behavior: contain; }
+          overflow-y: auto; overflow-x: hidden; min-height: 0; margin: 0 -22px; padding: 2px 22px; overscroll-behavior: contain; }
+  .body :global(input), .body :global(select) { max-width: 100%; }
   h3, .actions { flex-shrink: 0; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 4px; }
   @media (max-width: 640px) {
