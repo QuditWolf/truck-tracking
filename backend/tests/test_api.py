@@ -531,13 +531,31 @@ def test_suggestions_follow_each_trucks_last_step(client):
     post("A", "ENTER", "BG", "08:20")
     assert (sug("A")["verb"], sug("A")["site"]) == ("US", "BG")
     post("A", "LEFT", "BG", "08:40")
-    assert (sug("A")["verb"], sug("A")["site"]) == ("ENTER", "KN4")  # back to where A last loaded
+    assert (sug("A")["verb"], sug("A")["site"]) == ("ENTER", "SKP")  # after unloading → the shift's loading site
     assert sug("A", "ENTER")["site"] == "SKP" or sug("A", "ENTER")["site"] == "KN4"  # user picked ENTER → loading side
     # several trucks: only what they agree on
     post("C", "LS", "SKP", "08:00")
     both = sug("A,C")
     assert both["verb"] is None and both["site"] is None
 
+
+
+def test_suggested_site_prefers_shift_defaults_by_phase(client):
+    boss = login(client, "boss@x.org", "Boss")
+    for code, t in (("SKP", "loading"), ("KN4", "loading"), ("BG", "unloading"), ("DAIRY", "unloading")):
+        boss.post("/api/admin/registry", json={"kind": "site", "code": code, "site_type": t})
+    boss.post("/api/shifts/start", json={"sites": ["KN4", "SKP", "DAIRY"], "at": "2026-10-14T06:00"})
+    post = lambda t, v, site, hm: boss.post("/api/reports", json={"trucks": [t], "verb": v, "site": site,
+                                                                 "event_time": f"2026-10-14T{hm}"})
+    sug = lambda verb=None: boss.get("/api/suggest?trucks=A" + (f"&verb={verb}" if verb else "")).json()
+    post("B", "ENTER", "BG", "06:30")  # BG is busier, but DAIRY is the shift's unloading site
+    assert sug()["site"] == "KN4"  # first default loading site
+    post("A", "LO", "SKP", "07:00")
+    assert (sug()["verb"], sug()["site"]) == ("LEFT", "SKP")  # still there
+    assert sug("ENTER")["site"] == "DAIRY"  # loaded → unloading default
+    post("A", "UO", "BG", "08:00")
+    assert sug("ENTER")["site"] == "SKP"  # unloaded → loading default A last used
+    assert sug("LEFT")["site"] == "BG"
 
 def test_shift_view_corrections_and_restore(client):
     boss = login(client, "boss@x.org", "Boss")

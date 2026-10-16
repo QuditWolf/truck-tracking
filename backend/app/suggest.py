@@ -3,8 +3,10 @@
 Next step: simply the next step of the cycle after the truck's last report —
 ENTER loading → LS → LO → LEFT loading → ENTER unloading → US → UO → LEFT unloading → ENTER loading …
 (predictable, and it nudges crews to report every step).
-Site: loading steps → where the truck last loaded (else the shift's default loading site, else the
-busiest loading site); unloading steps → where it last unloaded (else the busiest unloading site).
+Site: mid-phase steps (LO, LEFT) stay at the truck's current site. A new phase (ENTER) picks its kind
+from the cycle — after loading an unloading site, after unloading a loading site — preferring the
+shift's default sites of that kind (the one this truck last used, else the first), then the truck's own
+history, then the busiest site of that kind.
 Several trucks: suggest only what they all agree on. Nothing is ever sent automatically.
 """
 
@@ -39,23 +41,24 @@ def _slot_for_verb(verb: str, last: int) -> Optional[int]:
 
 
 def _site(conn, reg: Registry, history: list[trips.Trip], slot: int, last_event) -> Optional[str]:
+    """Site for the suggested step. The phase decides the kind: after loading (LO, LEFT loading) the
+    next stop is an unloading site, after unloading (UO, LEFT unloading) a loading site."""
     kind = "loading" if slot <= 3 else "unloading"
-    if last_event and last_event.site_type == kind and (last_event.time is not None):
-        same_phase = (slot <= 3) == (_phase_slot(last_event) <= 3)
-        if same_phase:
-            return last_event.site  # still at the same site
-    for t in reversed(history):  # where this truck last was for this phase
-        for k in sorted(t.slots, reverse=True):
-            e = t.slots[k]
-            if e.site and e.site_type == kind:
-                return e.site
-    if kind == "loading":
-        from .reports import shift_sites
-        sh = open_shift(conn)
-        for code in (shift_sites(conn, reg, sh) if sh else []):
-            item = reg.find("site", code, active_only=False)
-            if item and item.site_type == "loading":
-                return code
+    if last_event and last_event.site and last_event.site_type == kind and (slot <= 3) == (_phase_slot(last_event) <= 3):
+        return last_event.site  # mid-phase (LS → LO → LEFT): still at the same site
+    used = [e.site for t in reversed(history) for k in sorted(t.slots, reverse=True)
+            if (e := t.slots[k]).site and e.site_type == kind]
+    from .reports import shift_sites
+    sh = open_shift(conn)
+    defaults = []
+    for code in (shift_sites(conn, reg, sh) if sh else []):
+        item = reg.find("site", code, active_only=False)
+        if item and item.site_type == kind:
+            defaults.append(item.code)
+    if defaults:  # the shift's default sites first; among them, where this truck last went
+        return next((c for c in used if c in defaults), defaults[0])
+    if used:
+        return used[0]
     shifts = load_shifts(conn)
     usage = site_usage(conn, reg, shifts[-1]) if shifts else {}
     typed = {s["code"]: s for s in reg.listing("site") if s["site_type"] == kind}
