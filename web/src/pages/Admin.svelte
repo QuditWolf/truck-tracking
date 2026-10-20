@@ -52,7 +52,7 @@
   let mergeInto = $state('')
 
   function openNew() {
-    form = { code: '', label: '', site_type: '', plate: '', notes: '' }
+    form = { code: '', label: '', site_type: '', plate: '', notes: '', hidden: false }
     error = ''
     formOpen = true
   }
@@ -62,7 +62,7 @@
     formOpen = true
   }
   async function save() {
-    const body = { code: form.code.trim(), label: form.label.trim() || form.code.trim(), plate: form.plate, notes: form.notes,
+    const body = { code: form.code.trim(), label: form.label.trim() || form.code.trim(), plate: form.plate, notes: form.notes, hidden: !!form.hidden,
                    site_type: kind === 'site' ? form.site_type || null : null }
     const ok = form.id
       ? await run(() => api.patch(`/api/admin/registry/${form.id}`, body), `${body.code} saved`)
@@ -172,7 +172,7 @@
           </thead>
           <tbody class="stagger">
             {#each canon as i (i.id)}
-              <tr class:inactive={!i.active} onclick={() => openEdit(i)}>
+              <tr class:inactive={!i.active || i.hidden} onclick={() => openEdit(i)}>
                 <td class="mono strong">{i.code}</td>
                 <td>{i.label !== i.code ? i.label : ''}</td>
                 {#if kind === 'truck'}<td class="mono plate">{i.plate || ''}</td>{/if}
@@ -187,7 +187,7 @@
                   <td>{#each aliasesOf(i.id) as a}<span class="tag mono" class:inactive={!a.active}>{a.code}</span>{/each}</td>
                 {/if}
                 <td class="notes">{i.notes || ''}</td>
-                <td class="num">{#if !i.active}<span class="pill idle plain">inactive</span>{/if}<Icon name="chevron" size={15} /></td>
+                <td class="num">{#if !i.active}<span class="pill idle plain">inactive</span>{:else if i.hidden}<span class="pill idle plain">hidden</span>{/if}<Icon name="chevron" size={15} /></td>
               </tr>
             {:else}
               <tr><td colspan="7" class="mute">Nothing here yet.</td></tr>
@@ -274,6 +274,13 @@
         </label>
       {/if}
       <label class="field"><span>Remarks</span><input class="input" bind:value={form.notes} placeholder={kind === 'truck' ? 'Driver, owner, capacity…' : 'Optional'} /></label>
+      {#if kind !== 'verb'}
+        <div>
+          <label class="check"><input type="checkbox" bind:checked={form.hidden} /> Hide from the report form</label>
+          <p class="mute small">Still counted and understood on WhatsApp. Typing {form.code || 'the code'} exactly in a report shows it again.</p>
+        </div>
+      {/if}
+      {#if form.id}<p class="mute small">Changing the code keeps the old one as an alias, so past entries and messages still match.</p>{/if}
     </form>
 
     {#if form.id && kind !== 'verb'}

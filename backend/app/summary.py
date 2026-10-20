@@ -41,7 +41,8 @@ POSITION_LINES = [("loading", "Loading"), ("en_route", "Hauling to unload"), ("l
 def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
     """WhatsApp summary: title / totals (Loaded in *bold*, hauling, Unloaded) / per-truck detail.
     Final counts only; inferred/manual detail lives on the web page."""
-    totals = [f"Loaded *{c.loaded}*" + (f": {_sites(c.loaded_by_site)}" if _sites(c.loaded_by_site) else "")]
+    totals = [f"Loaded *{c.loaded}*" + (f": {_sites(c.loaded_by_site)}" if _sites(c.loaded_by_site) else "")
+              + (f" ({c.loaded_with_unlogged} incl. unlogged {_trucks(c.unlogged)})" if c.unlogged else "")]
     if hauling := c.position.get("en_route"):
         totals.append(f"Hauling to unload: {len(hauling)} ({','.join(hauling)})")
     totals.append(f"Unloaded {c.unloaded}" + (f": {_sites(c.unloaded_by_site)}" if _sites(c.unloaded_by_site) else ""))
@@ -57,6 +58,10 @@ def counts_text(title: str, c: trips.Counts, notes: bool = True) -> str:
         elif v := c.position.get(key):
             detail.append(f"{label}: {','.join(v)}")
     return "\n\n".join("\n".join(block) for block in ([title], totals, detail) if block)
+
+
+def _trucks(d: dict) -> str:
+    return ",".join(t if n == 1 else f"{t}*{n}" for t, n in d.items())
 
 
 def _minutes(a, b) -> Optional[float]:
@@ -162,6 +167,7 @@ def shift_summary(conn, shift_id: Optional[int] = None) -> Optional[dict]:
     seg = a.segment(sh.id) or trips.Segment(sh)
     c = trips.count(seg, a.flags)
     manual = apply_manual(conn, sh.id, c)
+    trips.finish(c)
     title = shift_label(sh, shifts)
     from .registry import Registry
     from .reports import report_dict
@@ -194,6 +200,7 @@ def range_summary(conn, start: date, end: date) -> dict:
         seg = a.segment(sh.id) or trips.Segment(sh)
         c = trips.count(seg, a.flags)
         apply_manual(conn, sh.id, c)
+        trips.finish(c)
         per_shift.append({"shift_id": sh.id, "title": shift_label(sh, load_shifts(conn)),
                           "loaded": c.loaded, "unloaded": c.unloaded})
         for k in ("loaded", "loaded_inf", "loaded_manual", "loaded_abs", "reached", "unloaded", "unloaded_inf",
@@ -208,6 +215,9 @@ def range_summary(conn, start: date, end: date) -> dict:
                 agg[k] += pt[k]
         total.notes += c.notes
         total.manual += c.manual
+        for truck, n in c.unlogged.items():
+            total.unlogged[truck] = total.unlogged.get(truck, 0) + n
+    total.loaded_with_unlogged = total.loaded + sum(total.unlogged.values())
     label = f"{start:%d %b}" if start == end else f"{start:%d %b}-{end:%d %b}"
     return {"title": label, "counts": total.__dict__, "per_shift": per_shift,
             "text": counts_text(f"Total {label}", total, notes=False)}
@@ -262,8 +272,9 @@ def shift_list(conn, include_deleted: bool = False) -> list[dict]:
         c = trips.count(a.segment(sh.id) or trips.Segment(sh), a.flags) if sh else trips.Counts()
         if sh:
             apply_manual(conn, sh.id, c)
+            trips.finish(c)
             d["title"] = shift_label(sh, live)
-        d.update(loaded=c.loaded, unloaded=c.unloaded, loaded_abs=c.loaded_abs, unloaded_abs=c.unloaded_abs,
+        d.update(loaded=c.loaded, unloaded=c.unloaded, loaded_with_unlogged=c.loaded_with_unlogged, unlogged=c.unlogged, loaded_abs=c.loaded_abs, unloaded_abs=c.unloaded_abs,
                  manual=manual_entries(conn, r["id"]))
         out.append(d)
     return out

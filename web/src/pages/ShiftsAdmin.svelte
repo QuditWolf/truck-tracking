@@ -98,7 +98,7 @@
       </div>
       <div class="card-b">
         <div class="nums">
-          <div><b class="mono">{s.loaded}</b><span>loaded{s.loaded_abs !== s.loaded ? ` · ${halves(s.loaded_abs)} loads` : ''}</span></div>
+          <div><b class="mono">{s.loaded}</b><span>loaded{s.loaded_abs !== s.loaded ? ` · ${halves(s.loaded_abs)} loads` : ''}{s.loaded_with_unlogged > s.loaded ? ` · ${s.loaded_with_unlogged} incl. unlogged` : ''}</span></div>
           <div><b class="mono">{s.unloaded}</b><span>unloaded{s.unloaded_abs !== s.unloaded ? ` · ${halves(s.unloaded_abs)} loads` : ''}</span></div>
         </div>
         {#if s.manual.length}

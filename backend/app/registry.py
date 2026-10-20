@@ -18,6 +18,12 @@ class Item:
     merged_into: Optional[int]
     active: bool
     sort: int
+    hidden: bool = False  # left out of the web pickers; still matches typed input and history
+
+
+def _order(i: "Item"):
+    """Trucks: short plain codes (A, B, A2) first, long descriptive ones after."""
+    return (i.sort, i.kind == "truck" and len(i.code) > 3, i.code)
 
 
 class Registry:
@@ -26,7 +32,7 @@ class Registry:
     def __init__(self, conn):
         rows = conn.execute("SELECT * FROM registry").fetchall()
         self.by_id = {r["id"]: Item(r["id"], r["kind"], r["code"], r["label"], r["site_type"],
-                                    r["plate"], r["notes"], r["merged_into"], bool(r["active"]), r["sort"]) for r in rows}
+                                    r["plate"], r["notes"], r["merged_into"], bool(r["active"]), r["sort"], bool(r["hidden"])) for r in rows}
 
     def canon(self, id_: Optional[int]) -> Optional[Item]:
         item = self.by_id.get(id_)
@@ -47,9 +53,9 @@ class Registry:
 
     def listing(self, kind: str) -> list[dict]:
         items = [i for i in self.by_id.values() if i.kind == kind and i.active and not i.merged_into]
-        items.sort(key=lambda i: (i.sort, i.code))
+        items.sort(key=_order)
         return [{"id": i.id, "code": i.code, "label": i.label, "site_type": i.site_type,
-                 "plate": i.plate, "notes": i.notes,
+                 "plate": i.plate, "notes": i.notes, "hidden": i.hidden,
                  "aliases": sorted(a.code for a in self.by_id.values() if a.merged_into == i.id and a.active)}
                 for i in items]
 
@@ -69,9 +75,15 @@ def create(conn, kind: str, code: str, label: str = "", site_type=None, user_id=
 
 
 def resolve_or_create(conn, reg: Registry, kind: str, text: str, user_id) -> Item:
-    """Web path: unknown values become new registry entries (admin can merge later)."""
-    item = reg.find(kind, text)
+    """Web path: unknown values become new registry entries (admin can merge later). Typing the exact
+    code of a hidden (or deactivated) entry brings it back instead of creating a duplicate."""
+    item = reg.find(kind, text, active_only=False)
     if item:
+        if item.hidden or not item.active:
+            conn.execute("UPDATE registry SET hidden = 0, active = 1 WHERE id = ?", (item.id,))
+            audit(conn, user_id, "update", "registry", item.id, before={"hidden": item.hidden, "active": item.active},
+                  after={"hidden": False, "active": True, "why": "typed in a report"})
+            item.hidden, item.active = False, True
         return item
     if kind == "truck" or kind == "verb":
         text = text.strip().upper()
@@ -121,14 +133,28 @@ def add_alias(conn, target_id: int, code: str, user_id) -> int:
 
 
 def edit(conn, item_id: int, user_id, **fields) -> None:
-    allowed = {k: v for k, v in fields.items() if k in ("code", "label", "site_type", "plate", "notes", "active", "sort") and v is not None}
+    allowed = {k: v for k, v in fields.items() if k in ("code", "label", "site_type", "plate", "notes", "active", "sort", "hidden") and v is not None}
     row = conn.execute("SELECT * FROM registry WHERE id = ?", (item_id,)).fetchone()
     if not row:
         raise ValueError("not found")
+    if "code" in allowed:
+        allowed["code"] = allowed["code"].strip()
+        if row["kind"] == "truck":
+            allowed["code"] = allowed["code"].upper()
     if allowed:
         sets = ", ".join(f"{k} = ?" for k in allowed)
         conn.execute(f"UPDATE registry SET {sets} WHERE id = ?", (*allowed.values(), item_id))
         audit(conn, user_id, "update", "registry", item_id, before=dict(row), after=allowed)
+    # Renamed: the old code stays as an alias, so WhatsApp messages and hand-entered counts that use it
+    # still resolve to this item.
+    old = row["code"]
+    if row["kind"] in ALIASABLE and allowed.get("code") and allowed["code"].lower() != old.lower():
+        clash = Registry(conn).find(row["kind"], old, active_only=False)
+        if not clash or clash.id == item_id:
+            cur = conn.execute("INSERT INTO registry (kind, code, label, created_by, created_at, merged_into) "
+                               "VALUES (?,?,?,?,?,?)", (row["kind"], old, old, user_id, stamp(), item_id))
+            audit(conn, user_id, "create", "registry", cur.lastrowid,
+                  after={"kind": row["kind"], "code": old, "merged_into": item_id, "why": "renamed"})
 
 
 def delete(conn, item_id: int, user_id) -> str:
@@ -144,7 +170,7 @@ def delete(conn, item_id: int, user_id) -> str:
 
 def admin_listing(reg: Registry) -> list[dict]:
     return [{**i.__dict__, "canonical": reg.canon(i.id).code} for i in
-            sorted(reg.by_id.values(), key=lambda i: (i.kind, i.sort, i.code))]
+            sorted(reg.by_id.values(), key=lambda i: (i.kind, *_order(i)))]
 
 
 CYCLE_VERBS = [

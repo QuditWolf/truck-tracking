@@ -617,3 +617,36 @@ def test_admin_records_a_past_shift_with_counts(client):
     assert "Loaded: UNKNOWN*6" in s["text"]  # no truck given → unknown trolley
     u = login(client, "u@x.org", "U")
     assert u.post("/api/manual", json={"trucks": [], "kind": "load", "count": 1}).status_code == 400  # unnamed: admins only
+
+
+def test_unlogged_loads_shown_beside_loaded(client):
+    boss = login(client, "boss@x.org", "Boss")
+    for code, t in (("SKP", "loading"), ("BG", "unloading")):
+        boss.post("/api/admin/registry", json={"kind": "site", "code": code, "site_type": t})
+    boss.post("/api/shifts/start", json={"site": "SKP", "at": "2026-10-16T06:00"})
+    rep = lambda t, v, site, hm: boss.post("/api/reports", json={"trucks": [t], "verb": v, "site": site,
+                                                                "event_time": f"2026-10-16T{hm}"})
+    rep("A", "LO", "SKP", "07:00"); rep("A", "UO", "BG", "08:00")
+    rep("B", "ENTER", "BG", "08:10"); rep("B", "UO", "BG", "08:20")  # B's load never logged
+    s = boss.get("/api/summary/shift").json()
+    assert s["counts"]["loaded"] == 1 and s["counts"]["unloaded"] == 2
+    assert "Loaded *1*: SKP 1 (2 incl. unlogged B)" in s["text"]
+    assert boss.get("/api/admin/shifts").json()[0]["loaded_with_unlogged"] == 2
+
+
+def test_hide_rename_and_retype(client):
+    boss = login(client, "boss@x.org", "Boss")
+    boss.post("/api/admin/registry", json={"kind": "site", "code": "SKP", "site_type": "loading"})
+    tid = boss.post("/api/admin/registry", json={"kind": "truck", "code": "FARMTRACK 6055"}).json()["id"]
+    boss.post("/api/admin/registry", json={"kind": "truck", "code": "B"})
+    # rename: old code becomes an alias
+    assert boss.patch(f"/api/admin/registry/{tid}", json={"code": "J", "label": "Farmtrac 6055"}).status_code == 200
+    listed = boss.get("/api/registry").json()["truck"]
+    assert [t["code"] for t in listed] == ["B", "J"] and listed[1]["aliases"] == ["FARMTRACK 6055"]
+    # hide: gone from the form, still resolves; typing it exactly brings it back
+    boss.patch(f"/api/admin/registry/{tid}", json={"hidden": True})
+    assert [t["code"] for t in boss.get("/api/registry").json()["truck"]] == ["B"]
+    boss.post("/api/shifts/start", json={"site": "SKP", "at": "2026-10-16T06:00"})
+    r = boss.post("/api/reports", json={"trucks": ["j"], "verb": "LO", "site": "SKP", "event_time": "2026-10-16T07:00"})
+    assert r.json()["trucks"] == ["J"]
+    assert [t["code"] for t in boss.get("/api/registry").json()["truck"]] == ["B", "J"]

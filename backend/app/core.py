@@ -84,6 +84,7 @@ MIGRATIONS = [
     ("reports", "half", "INTEGER NOT NULL DEFAULT 0"),
     ("manual_counts", "half", "INTEGER NOT NULL DEFAULT 0"),
     ("manual_counts", "negative", "INTEGER NOT NULL DEFAULT 0"),
+    ("registry", "hidden", "INTEGER NOT NULL DEFAULT 0"),  # not offered in the pickers; still resolves
 ]
 
 

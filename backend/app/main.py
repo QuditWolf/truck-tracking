@@ -220,7 +220,8 @@ async def live(request: Request, user=Depends(member)):
 def get_registry(user=Depends(member), conn=Depends(get_conn)):
     reg = registry.Registry(conn)
     sh = reports.open_shift(conn)
-    return {"truck": reg.listing("truck"), "site": reports.sites_by_usage(conn, reg), "verb": reg.listing("verb"),
+    shown = lambda items: [x for x in items if not x.get("hidden")]
+    return {"truck": shown(reg.listing("truck")), "site": shown(reports.sites_by_usage(conn, reg)), "verb": reg.listing("verb"),
             "shift": reports.shift_dict(conn, reg, sh) if sh else None}
 
 
@@ -546,6 +547,7 @@ class RegistryPatch(BaseModel):
     notes: Optional[str] = None
     active: Optional[bool] = None
     sort: Optional[int] = None
+    hidden: Optional[bool] = None
 
 
 class AliasIn(BaseModel):

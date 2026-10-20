@@ -107,7 +107,8 @@
   {#if c}
     <div class="stats stagger">
       <Stat label="Loaded" value={c.loaded} accent
-        sub={[c.loaded_abs !== c.loaded ? `${halves(c.loaded_abs)} loads (half = ½)` : '', c.loaded_inf ? `${c.loaded_inf} inferred` : ''].filter(Boolean).join(' · ') || 'all reported'} />
+        sub={[c.loaded_abs !== c.loaded ? `${halves(c.loaded_abs)} loads (half = ½)` : '', c.loaded_inf ? `${c.loaded_inf} inferred` : '',
+             Object.keys(c.unlogged || {}).length ? `${c.loaded_with_unlogged} incl. unlogged ${Object.entries(c.unlogged).map(([t, n]) => n > 1 ? `${t}*${n}` : t).join(',')}` : ''].filter(Boolean).join(' · ') || 'all reported'} />
       <Stat label="Unloaded" value={c.unloaded}
         sub={[c.unloaded_abs !== c.unloaded ? `${halves(c.unloaded_abs)} loads (half = ½)` : '', c.unloaded_inf ? `${c.unloaded_inf} inferred` : ''].filter(Boolean).join(' · ') || 'all reported'} />
       <Stat label="Flags" value={c.flags} sub={c.flags ? 'check reports' : 'clean'} warn={c.flags > 0} />

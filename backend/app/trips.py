@@ -336,12 +336,24 @@ class Counts:
     flags: int = 0
     notes: list[str] = field(default_factory=list)  # why each inferred count was inferred
     manual: list[str] = field(default_factory=list)  # hand-added counts for untracked trucks
+    unlogged: dict[str, int] = field(default_factory=dict)  # truck → unloads with no load report (see finish)
+    loaded_with_unlogged: int = 0
+
+
+def finish(c: "Counts") -> "Counts":
+    """A truck can't unload what it never loaded: unloads beyond a truck's reported loads (and loads
+    carried in from the previous shift) are loads nobody logged. Shown beside the count, not in it."""
+    c.unlogged = {t: n for t, p in sorted(c.per_truck.items())
+                  if t and (n := p["unloads"] - p["loads"] - p.get("carry", 0)) > 0}
+    c.loaded_with_unlogged = c.loaded + sum(c.unlogged.values())
+    return c
 
 
 def count(seg: Segment, flags: dict[tuple[int, str], list[Flag]]) -> Counts:
     c = Counts()
     for truck, trips in sorted(seg.trips.items()):
         pt = c.per_truck.setdefault(truck, {"trips": len(trips), "loads": 0, "unloads": 0})
+        pt["carry"] = sum(1 for t in trips if t.carry_in)  # loaded last shift: no load owed here
         for t in trips:
             if t.loaded:
                 c.loaded += 1
