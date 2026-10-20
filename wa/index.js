@@ -34,11 +34,33 @@ function remember(id) {
   if (sentIds.size > 5000) sentIds.delete(sentIds.values().next().value)
 }
 
+// Exactly one socket at a time: every (re)connect bumps `gen`, and events from older sockets are
+// ignored. Without this, a logout or a quick retry could leave two sockets pairing at once, writing
+// the same session files, and the phone's scan never completes.
+let gen = 0
+let timer = null
+
+function reconnect(delay, { wipe = false } = {}) {
+  clearTimeout(timer)
+  const old = sock
+  sock = null
+  gen++
+  try { old?.ev.removeAllListeners(); old?.end(undefined) } catch { /* already closed */ }
+  if (wipe) fs.rmSync(SESSION_DIR, { recursive: true, force: true })
+  timer = setTimeout(() => connect().catch((e) => { log('connect failed', e.message); reconnect(5000) }), delay)
+}
+
 async function connect() {
+  const mine = ++gen
   fs.mkdirSync(SESSION_DIR, { recursive: true })
   const { state: auth, saveCreds } = await useMultiFileAuthState(SESSION_DIR)
-  const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }))
-  sock = makeWASocket({
+  const { version, isLatest } = await fetchLatestBaileysVersion().catch((e) => {
+    log('could not fetch the current WhatsApp Web version, using the built-in one:', e.message)
+    return {}
+  })
+  if (mine !== gen) return
+  log('connecting with WhatsApp Web', (version || []).join('.') || 'built-in', isLatest === false ? '(not latest)' : '')
+  const me = sock = makeWASocket({
     version, auth, logger: pino({ level: 'warn' }),
     browser: Browsers.ubuntu('Dayalbagh Truck Tracking'),
     markOnlineOnConnect: false, syncFullHistory: false, generateHighQualityLinkPreview: false,
@@ -46,6 +68,7 @@ async function connect() {
   sock.ev.on('creds.update', saveCreds)
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr: code }) => {
+    if (mine !== gen) return
     if (code) {
       state = 'qr'
       qr = await QRCode.toDataURL(code, { margin: 1, width: 280 })
@@ -53,25 +76,32 @@ async function connect() {
     }
     if (connection === 'open') {
       state = 'open'; qr = null; retry = 0; since = new Date().toISOString()
-      log('connected as', sock.user?.id)
+      log('connected as', me.user?.id)
     }
     if (connection === 'close') {
-      const code = lastDisconnect?.error?.output?.statusCode
-      state = 'closed'
-      if (code === DisconnectReason.loggedOut) {
-        log('logged out — clearing session, new QR follows')
-        fs.rmSync(SESSION_DIR, { recursive: true, force: true })
-        setTimeout(connect, 1000)
+      const status = lastDisconnect?.error?.output?.statusCode
+      const reason = lastDisconnect?.error?.message || ''
+      state = 'closed'; qr = null
+      if (status === DisconnectReason.loggedOut) {
+        log('logged out (401) — clearing session, new QR follows')
+        retry = 0
+        reconnect(1000, { wipe: true })
+      } else if (status === DisconnectReason.restartRequired) {
+        log('paired — restarting the connection (515)')  // normal right after scanning the QR
+        reconnect(0)
+      } else if (status === DisconnectReason.timedOut && !auth.creds.registered) {
+        log('QR not scanned in time — new QR follows')
+        reconnect(1000)
       } else {
         const delay = Math.min(1000 * 2 ** retry++, 60000)
-        log(`connection closed (${code}), retrying in ${delay}ms`)
-        setTimeout(connect, delay)
+        log(`connection closed (${status} ${reason}), retrying in ${delay}ms`)
+        reconnect(delay)
       }
     }
   })
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return
+    if (type !== 'notify' || mine !== gen) return
     for (const m of messages) {
       const jid = m.key.remoteJid || ''
       if (!jid.endsWith('@g.us') || sentIds.has(m.key.id)) continue
@@ -79,7 +109,7 @@ async function connect() {
       const text = (msg.conversation || msg.extendedTextMessage?.text || '').trim()
       if (!text) continue
       const body = {
-        id: m.key.id, jid, from_me: !!m.key.fromMe, me: sock.user?.id || '',
+        id: m.key.id, jid, from_me: !!m.key.fromMe, me: me.user?.id || '',
         sender: m.key.participant || '', sender_alt: m.key.participantAlt || '',
         push_name: m.pushName || '', text,
         ts: Number(m.messageTimestamp || Date.now() / 1000),
@@ -114,7 +144,7 @@ http.createServer(async (req, res) => {
   if (req.headers['x-wa-token'] !== TOKEN) return reply(res, 401, { error: 'bad token' })
   try {
     if (req.method === 'GET' && req.url === '/status') {
-      return reply(res, 200, { state, qr, since, me: sock?.user ? { id: sock.user.id, name: sock.user.name || '' } : null })
+      return reply(res, 200, { state, qr, since, me: state === 'open' && sock?.user ? { id: sock.user.id, name: sock.user.name || '' } : null })
     }
     if (state !== 'open' && req.url !== '/logout') return reply(res, 503, { error: `WhatsApp ${state}` })
 
@@ -138,10 +168,11 @@ http.createServer(async (req, res) => {
       return reply(res, 200, { id: sent?.key?.id || null })
     }
     if (req.method === 'POST' && req.url === '/logout') {
-      try { await sock?.logout() } catch { /* already gone */ }
-      fs.rmSync(SESSION_DIR, { recursive: true, force: true })
-      state = 'connecting'; qr = null; since = null
-      setTimeout(connect, 1000)
+      const old = sock
+      gen++  // the logout's own "closed" event must not trigger a second reconnect
+      try { await old?.logout() } catch { /* already gone */ }
+      state = 'connecting'; qr = null; since = null; retry = 0
+      reconnect(1000, { wipe: true })
       return reply(res, 200, { ok: true })
     }
     reply(res, 404, { error: 'not found' })
@@ -151,4 +182,4 @@ http.createServer(async (req, res) => {
   }
 }).listen(PORT, '127.0.0.1', () => log(`bridge on 127.0.0.1:${PORT}`))
 
-connect().catch((e) => { log('fatal', e); process.exit(1) })
+reconnect(0)
