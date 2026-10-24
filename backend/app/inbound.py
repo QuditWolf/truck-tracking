@@ -15,7 +15,7 @@ from .registry import Registry
 from .relay import who
 
 HELP = ("Commands: shift start [SITE] [@HH:MM] | shift end [@HH:MM] | summary | summary last | summary today\n"
-        "Fleet group: A,B LS KN4 @14:32 (time optional, - remark on next line)")
+        "Fleet group: A,B LS KN4 @14:32 | H LO LEFT (site and time optional, - remark on next line)")
 
 
 def _digits(jid: str) -> str:
@@ -132,15 +132,35 @@ def fleet(conn, msg: dict) -> str:
                if (i := reg.find("site", c, active_only=False)) and i.site_type == "loading"]
     default_site = loading[0] if len(loading) == 1 else None  # one loading site → use it; several → ask
     p = parse.parse(msg["text"], reg, sent, default_site)
+    guessed = ""
+    if not p.ok and p.missing == ["site"] and not p.site_given and p.trucks:
+        # No site written: use where the truck is now (H LO LEFT after H LS SKP), else the shift's site
+        # for this step. If the shift has several such sites, record the likeliest and ask control to check.
+        from .suggest import suggest
+        s = suggest(conn, p.trucks, p.verb)
+        if s["site"] and (s["how"] in ("here", "only_default", "default", "history")) and \
+                (p.verb != "LEFT" or s["how"] == "here"):  # LEFT only from where the truck actually is
+            p.ok, p.site, p.missing = True, s["site"], []
+            p.time = p.time or sent.replace(second=0, microsecond=0)
+            guessed = "" if s["how"] in ("here", "only_default") else s["site"]
 
     if p.ok:
         user_id = sender_user(conn, msg)
-        r = reports.create_report(conn, {"trucks": p.trucks, "verb": p.verb, "site": p.site, "remarks": p.remarks, "half": p.half,
-                                         "event_time": core.iso(p.time)}, user_id, source="wa", wa_msg_id=msg["id"])
-        _log(conn, msg, "event", r["id"])
+        rs = reports.create_reports(conn, {"trucks": p.trucks, "site": p.site, "remarks": p.remarks, "half": p.half,
+                                           "event_time": core.iso(p.time)}, p.verbs, user_id, source="wa",
+                                    wa_msg_id=msg["id"])
+        r, ids = rs[0], [x["id"] for x in rs]
+        for rid in ids:
+            _log(conn, msg, "event", rid)
         a = reports.analysis(conn)
-        warnings = reports.flags_for(a, r["id"], r["trucks"])
-        _reply(conn, msg, wa.line({**r, "user": who(conn, r["user"])}, warnings), "ack", r["id"])
+        warnings = list(dict.fromkeys(w for x in rs for w in reports.flags_for(a, x["id"], x["trucks"])))
+        if guessed:
+            warnings.append(f"site not given, took {guessed}: correct it if wrong")
+        _reply(conn, msg, wa.line({**r, "user": who(conn, r["user"])}, warnings, also=rs[1:]), "ack",
+               ids if len(ids) > 1 else r["id"])
+        if guessed and not flag(conn, "notice_control") and setting(conn, "control_jid") != msg["jid"]:
+            enqueue(conn, "notice", {"text": wa.line({**r, "user": who(conn, r["user"])}, warnings[-1:], also=rs[1:]),
+                                     "as": "ack", "jids": [setting(conn, "control_jid")]})
         return "event"
 
     if parse.looks_like_event(msg["text"], reg):

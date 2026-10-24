@@ -19,6 +19,8 @@
   // Suggested next step for the chosen trucks (cycle order) and site — shown, not chosen, until tapped.
   let sVerb = $state('')
   let sSite = $state('')
+  // A second event reported at the same time (ENTER+LS, LO+LEFT): offered, never pre-selected.
+  let also = $state('')
   let remarks = $state(r0?.remarks || '')
   let skipFleet = $state(false) // admins only: keep this report out of the fleet group
   let half = $state(r0?.half || false)
@@ -34,8 +36,12 @@
 
   const effVerb = $derived(verb || sVerb)
   const effSite = $derived(site || sSite)
+  const siteType = $derived(registry.site.find((x) => x.code === effSite)?.site_type)
+  const companion = $derived(r0 ? '' : effVerb === 'LO' || effVerb === 'UO' ? 'LEFT'
+    : effVerb === 'ENTER' ? (siteType === 'loading' ? 'LS' : siteType === 'unloading' ? 'US' : '') : '')
+  $effect(() => { if (also && also !== companion) also = '' })
   const draft = $derived({
-    trucks, verb: effVerb, site: effSite || null, remarks, half,
+    trucks, verb: effVerb, verbs: also ? [effVerb, also] : [], site: effSite || null, remarks, half,
     event_time: when && when !== initialWhen ? when : r0 ? r0.event_time : null,
   })
   const ready = $derived(trucks.length > 0 && !!effVerb)
@@ -116,7 +122,7 @@
     try {
       const body = { ...draft, ...(startShift ? { start_shift: true } : {}), ...(skipFleet ? { skip_fleet: true } : {}) }
       const r = r0 ? await api.patch(`/api/reports/${r0.id}`, body) : await api.post('/api/reports', body)
-      if (!r0) { trucks = []; verb = ''; site = ''; remarks = ''; when = ''; advanced = false; skipFleet = false; half = false }
+      if (!r0) { trucks = []; verb = ''; also = ''; site = ''; remarks = ''; when = ''; advanced = false; skipFleet = false; half = false }
       onDone(r, startShift)
     } catch (e) {
       error = e.message
@@ -130,6 +136,15 @@
   <div class="fields">
     <Picker label="Truck" options={registry.truck} bind:value={trucks} multi />
     <Picker label="Event" options={registry.verb} bind:value={verb} variant="labelled" suggested={sVerb} />
+    {#if companion}
+      <div class="also" transition:slide={{ duration: 150 }}>
+        <span class="mute">Same time, also</span>
+        <button type="button" class="btn sm also-btn" class:on={also === companion} aria-pressed={also === companion}
+                onclick={() => (also = also === companion ? '' : companion)}>
+          {also === companion ? '✓' : '+'} {companion} <small>{registry.verb.find((v) => v.code === companion)?.label || ''}</small>
+        </button>
+      </div>
+    {/if}
     <Picker label="Site" options={siteOptions} bind:value={site} variant="labelled"
       suggested={siteOptions.some((x) => x.code === sSite) ? sSite : ''} />
 
@@ -164,7 +179,7 @@
     <div class="ticket" class:ready>
       {#if ready}
         <span>{trucks.join(',')}</span>
-        <span class="t-verb">{effVerb}</span>
+        <span class="t-verb">{effVerb}{also ? ` ${also}` : ''}</span>
         {#if effSite}<span>{effSite}</span>{/if}
         {#if half}<span class="t-half">½</span>{/if}
         <span class="t-dim">@{shownTime}</span>
@@ -198,6 +213,11 @@
 
 <style>
   .composer { display: flex; flex-direction: column; min-height: 100%; }
+  .also { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: -6px; font-size: 13px; }
+  .also-btn { background: transparent; color: var(--signal); box-shadow: inset 0 0 0 1.5px var(--signal); border-style: dashed; }
+  .also-btn small { color: color-mix(in srgb, var(--signal) 70%, transparent); font-weight: 500; }
+  .also-btn.on { background: var(--signal); color: var(--signal-ink); }
+  .also-btn.on small { color: color-mix(in srgb, var(--signal-ink) 80%, transparent); }
   .fields { display: flex; flex-direction: column; gap: 22px; padding-bottom: 20px; flex: 1; }
   .extras { display: flex; gap: 8px; }
   .extras .input { flex: 1; }

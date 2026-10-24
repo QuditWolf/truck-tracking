@@ -236,6 +236,7 @@ class ReportIn(BaseModel):
     start_shift: bool = False  # no open shift: start one at the event time (user confirmed)
     skip_fleet: bool = False  # admins only: don't relay this report to the fleet group
     half: bool = False  # half load
+    verbs: list[str] = []  # several events at once (ENTER+LS, LO+LEFT): one report each, same time
 
 
 class ReportPatch(BaseModel):
@@ -285,11 +286,13 @@ def create_report(body: ReportIn, user=Depends(member), conn=Depends(get_conn)):
         with core.tx(conn):
             if body.start_shift and not reports.open_shift(conn):
                 reports.start_shift(conn, user["id"], body.site, body.event_time or core.iso(core.now()))
-            r = reports.create_report(conn, body.model_dump(exclude={"start_shift", "skip_fleet"}), user["id"],
-                                      skip_fleet=body.skip_fleet and user["is_admin"])
+            rs = reports.create_reports(conn, body.model_dump(exclude={"start_shift", "skip_fleet", "verbs"}),
+                                        body.verbs or [body.verb], user["id"],
+                                        skip_fleet=body.skip_fleet and user["is_admin"])
     except ValueError as e:
         bad(e)
-    return _with_flags(conn, [r])[0]
+    out = _with_flags(conn, rs)
+    return {**out[0], "also": out[1:]}
 
 
 @app.get("/api/reports")
@@ -512,6 +515,19 @@ def admin_shift_create(body: PastShiftIn, user=Depends(admin), conn=Depends(get_
     try:
         with core.tx(conn):
             return reports.create_past_shift(conn, user["id"], body.started_at, body.ended_at, body.sites)
+    except ValueError as e:
+        bad(e)
+
+
+class SplitIn(BaseModel):
+    at: str  # IST; the new shift starts here, the old one ends a minute before
+
+
+@app.post("/api/admin/shifts/{shift_id}/split")
+def admin_shift_split(shift_id: int, body: SplitIn, user=Depends(admin), conn=Depends(get_conn)):
+    try:
+        with core.tx(conn):
+            return reports.split_shift(conn, shift_id, user["id"], body.at)
     except ValueError as e:
         bad(e)
 

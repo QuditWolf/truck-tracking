@@ -30,6 +30,18 @@
     await run(() => api.patch(`/api/shifts/${edit.id}`, { started_at: edit.started_at, ended_at: edit.ended_at, sites: edit.sites }), 'Shift updated')
   }
 
+  // split: someone forgot to end a shift
+  let split = $state(null)
+  let splitOpen = $state(false)
+  function openSplit(s) {
+    split = { shift: s, at: localInput() > (s.ended_at ? localInput(s.ended_at) : '9') ? localInput(s.ended_at) : localInput() }
+    splitOpen = true
+  }
+  async function saveSplit() {
+    splitOpen = false
+    await run(() => api.post(`/api/admin/shifts/${split.shift.id}/split`, { at: split.at }), 'Shift split in two')
+  }
+
   // add / subtract counts
   let adj = $state(null)
   let adjOpen = $state(false)
@@ -120,6 +132,7 @@
             <button class="btn quiet sm" onclick={() => openAdj(s, false)}>+ Add</button>
             <button class="btn quiet sm" onclick={() => openAdj(s, true)}>− Subtract</button>
             <button class="btn quiet sm" onclick={() => openEdit(s)}><Icon name="edit" size={13} />Edit</button>
+            <button class="btn quiet sm" onclick={() => openSplit(s)}>Split</button>
             {#if !s.open}<button class="btn ghost sm" onclick={() => reopen(s)}>Reopen</button>{/if}
             <span class="grow"></span>
             <button class="btn ghost sm danger" onclick={() => del(s)}>Delete shift</button>
@@ -159,6 +172,22 @@
   {#snippet actions()}
     <button class="btn ghost" onclick={() => (recOpen = false)}>Cancel</button>
     <button class="btn signal" disabled={!rec?.started_at || !rec?.ended_at} onclick={saveRec}>Record shift</button>
+  {/snippet}
+</Modal>
+
+<Modal bind:open={splitOpen} title="Split shift">
+  {#if split}
+    <p>{split.shift.title}</p>
+    <label class="field"><span>Second shift starts · IST</span>
+      <input class="input" type="datetime-local" bind:value={split.at} min={localInput(split.shift.started_at)}
+             max={split.shift.ended_at ? localInput(split.shift.ended_at) : localInput()} /></label>
+    <p class="mute small">The first shift ends a minute before; the second keeps the same sites and
+      {split.shift.ended_at ? 'the original end' : 'stays running'}. Reports go to whichever shift their time falls in.
+      Hand-added counts stay with the first shift. Nothing is sent to WhatsApp.</p>
+  {/if}
+  {#snippet actions()}
+    <button class="btn ghost" onclick={() => (splitOpen = false)}>Cancel</button>
+    <button class="btn signal" disabled={!split?.at} onclick={saveSplit}>Split</button>
   {/snippet}
 </Modal>
 

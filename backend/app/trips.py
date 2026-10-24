@@ -30,6 +30,16 @@ SLOT_NAMES = ["ENTER", "LS", "LO", "LEFT", "ENTER", "US", "UO", "LEFT"]
 # so US/UO (like ENTER/LEFT at loading) are optional.
 REQUIRED = (1, 2)
 FIXED_SLOTS = {"LS": 1, "LO": 2, "US": 5, "UO": 6}
+_STEP = {"ENTER": 0, "LS": 1, "US": 1, "LO": 2, "UO": 2, "LEFT": 3}
+
+
+def cycle_sort(verbs: list[str]) -> list[str]:
+    """Several events reported together ("LO LEFT", "ENTER LS") in cycle order, without repeats."""
+    return sorted(dict.fromkeys(verbs), key=lambda v: _STEP.get(v, 9))
+
+
+def mixed_phases(verbs: list[str]) -> bool:
+    return bool({"LS", "LO"} & set(verbs)) and bool({"US", "UO"} & set(verbs))
 
 
 @dataclass(frozen=True)

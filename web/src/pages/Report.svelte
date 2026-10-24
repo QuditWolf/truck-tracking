@@ -7,7 +7,8 @@
   let { registry, me, tick, onChange } = $props()
 
   function sent(r, startedShift) {
-    toast(startedShift ? `Shift started · ${line(r)}` : `Sent · ${line(r)}`)
+    const l = r.also?.length ? line({ ...r, verb: [r.verb, ...r.also.map((a) => a.verb)].join(" ") }) : line(r)
+    toast(startedShift ? `Shift started · ${l}` : `Sent · ${l}`)
     onChange()
   }
 </script>

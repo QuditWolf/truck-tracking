@@ -152,8 +152,24 @@ def _write_trucks(conn, reg: Registry, report_id: int, trucks: list[str]) -> Non
                      (report_id, reg.find("truck", code, active_only=False).id))
 
 
+def create_reports(conn, data: dict, verbs: list[str], user_id: int, source: str = "web", wa_msg_id=None,
+                   skip_fleet: bool = False) -> list[dict]:
+    """Several events reported together (H LO LEFT): one report per event, same time, in cycle order,
+    relayed as one message."""
+    from .trips import cycle_sort, mixed_phases
+    verbs = cycle_sort([v.strip().upper() for v in verbs if v and v.strip()])
+    if not verbs:
+        raise ValueError("event required")
+    if mixed_phases(verbs):
+        raise ValueError("loading and unloading events can't be reported together")
+    out = [create_report(conn, {**data, "verb": v}, user_id, source, wa_msg_id, skip_fleet, relay=False) for v in verbs]
+    if source == "web":
+        enqueue(conn, "report", {"report": out[0], "also": out[1:]})
+    return out
+
+
 def create_report(conn, data: dict, user_id: int, source: str = "web", wa_msg_id=None,
-                  skip_fleet: bool = False) -> dict:
+                  skip_fleet: bool = False, relay: bool = True) -> dict:
     reg = Registry(conn)
     n = normalize(conn, reg, data, user_id)
     ts = stamp()
@@ -167,7 +183,7 @@ def create_report(conn, data: dict, user_id: int, source: str = "web", wa_msg_id
     _write_trucks(conn, reg, rid, n["trucks"])
     report = get_report(conn, rid)
     audit(conn, user_id, "create", "report", rid, after=report)
-    if source == "web":
+    if source == "web" and relay:
         enqueue(conn, "report", {"report": report})
     return report
 
@@ -282,6 +298,27 @@ def create_past_shift(conn, user_id: int, started_at: str, ended_at: str, sites:
     _set_shift_sites(conn, reg, c.lastrowid, sites, user_id)
     out = shift_dict(conn, reg, conn.execute("SELECT * FROM shifts WHERE id = ?", (c.lastrowid,)).fetchone())
     audit(conn, user_id, "create", "shift", c.lastrowid, after=out)
+    return out
+
+
+def split_shift(conn, shift_id: int, user_id: int, at: str) -> dict:
+    """Admin: someone forgot to end a shift. It ends at `at` − 1 min and a new shift (same sites) starts at
+    `at`, running to the old end (or still open). Reports fall into whichever shift their time is in;
+    hand-added counts stay with the first shift."""
+    reg = Registry(conn)
+    row = conn.execute("SELECT * FROM shifts WHERE id = ? AND deleted = 0", (shift_id,)).fetchone()
+    if not row:
+        raise ValueError("shift not found")
+    at = minute(at)
+    if not to_ist(row["started_at"]) < to_ist(at) or (row["ended_at"] and to_ist(at) > to_ist(row["ended_at"])):
+        raise ValueError("split time must be inside the shift")
+    first_end = iso(to_ist(at) - timedelta(minutes=1))
+    conn.execute("UPDATE shifts SET ended_at = ?, ended_by = ? WHERE id = ?", (first_end, user_id, shift_id))
+    c = conn.execute("INSERT INTO shifts (started_at, ended_at, started_by, ended_by) VALUES (?,?,?,?)",
+                     (at, row["ended_at"], user_id, row["ended_by"]))
+    _set_shift_sites(conn, reg, c.lastrowid, shift_sites(conn, reg, row), user_id)
+    out = shift_dict(conn, reg, conn.execute("SELECT * FROM shifts WHERE id = ?", (c.lastrowid,)).fetchone())
+    audit(conn, user_id, "split", "shift", shift_id, before=dict(row), after={"ended_at": first_end, "new_shift": out})
     return out
 
 

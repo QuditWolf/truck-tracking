@@ -44,9 +44,12 @@ def _relay_jids(conn, r: dict) -> list[str]:
 
 
 def send(conn, jid: str, text: str, kind: str, report_id=None, quote=None) -> str | None:
+    """report_id may be a list: one message carrying several reports (each gets a wa_log row, so an
+    edit of any of them replies to this message)."""
     wa_id = wa_client.send(jid, text, quote)
-    conn.execute("INSERT INTO wa_log (at, direction, jid, wa_id, kind, report_id, text, from_me) "
-                 "VALUES (?, 'out', ?, ?, ?, ?, ?, 1)", (core.stamp(), jid, wa_id, kind, report_id, text))
+    for rid in (report_id if isinstance(report_id, list) else [report_id]):
+        conn.execute("INSERT INTO wa_log (at, direction, jid, wa_id, kind, report_id, text, from_me) "
+                     "VALUES (?, 'out', ?, ?, ?, ?, ?, 1)", (core.stamp(), jid, wa_id, kind, rid, text))
     return wa_id
 
 
@@ -108,8 +111,9 @@ def messages_for(conn, kind: str, payload: dict) -> list[tuple]:
 
 def _messages_for(conn, kind: str, payload: dict) -> list[tuple]:
     if kind == "report":
-        r = _short(conn, payload["report"])
-        return [(j, wa.line(r), "report", r["id"], None) for j in _relay_jids(conn, r)]
+        r, also = _short(conn, payload["report"]), payload.get("also") or []
+        ids = [r["id"], *(a["id"] for a in also)]
+        return [(j, wa.line(r, also=also), "report", ids if also else r["id"], None) for j in _relay_jids(conn, r)]
     if kind in ("edit", "delete"):
         r = _short(conn, payload["after"] if kind == "edit" else payload["report"])
         text = wa.edit_line(_short(conn, payload["before"]), r) if kind == "edit" else wa.delete_line(r)

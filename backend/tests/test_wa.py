@@ -468,7 +468,10 @@ def test_shift_with_several_sites(client, wa):
     sh = boss.post("/api/shifts/start", json={"sites": ["SOC", "SKP", "DAIRY"]}).json()
     assert sh["sites"] == ["SOC", "SKP", "DAIRY"] and sh["default_site"] == "SOC"
     assert [s["code"] for s in boss.get("/api/registry").json()["site"]][:3] == ["SOC", "SKP", "DAIRY"]  # shift's sites first
-    assert inbound(client, FLEET, "A LS", "M1") == "unparsed"  # two loading sites: ask, don't guess
+    assert inbound(client, FLEET, "A LS", "M1") == "event"  # two loading sites: first one, control asked to check
+    drain(client)
+    assert any("A LS SOC" in t and "site not given, took SOC" in t for t in wa.texts(CONTROL))
+    boss.delete(f"/api/reports/{boss.get('/api/feed').json()[0]['id']}")
     boss.patch(f"/api/shifts/{sh['id']}", json={"sites": ["SKP", "DAIRY"]})  # edit later
     assert boss.get("/api/shifts").json()[0]["sites"] == ["SKP", "DAIRY"]
     assert inbound(client, FLEET, "A LS", "M2") == "event"  # one loading site → filled in
@@ -480,3 +483,21 @@ def test_shift_with_several_sites(client, wa):
     client.app.state.conn.execute("UPDATE shifts SET ended_at = '2026-01-01T00:00:00+05:30', started_at = '2025-12-31T00:00:00+05:30'")
     assert inbound(client, CONTROL, "shift start skp soc", "C1") == "shift_start"
     assert boss.get("/api/shifts").json()[0]["sites"] == ["SKP", "SOC"]
+
+
+
+def test_several_events_in_one_message_and_site_from_where_the_truck_is(client, wa):
+    boss = wa.boss
+    boss.post("/api/admin/registry", json={"kind": "site", "code": "SKP", "site_type": "loading"})
+    boss.post("/api/shifts/start", json={"sites": ["SOC", "SKP"]})
+    assert inbound(client, FLEET, "C LS SKP", "M1") == "event"
+    assert inbound(client, FLEET, "C lo Left", "M2") == "event"  # no site: C is at SKP
+    feed = boss.get("/api/feed").json()
+    assert [(r["verb"], r["site"]) for r in feed[:2]] == [("LEFT", "SKP"), ("LO", "SKP")]
+    assert feed[0]["event_time"] == feed[1]["event_time"]
+    assert inbound(client, FLEET, "B LEFT", "M3") == "unparsed"  # LEFT from nowhere: ask
+    assert inbound(client, FLEET, "B LO US SOC", "M4") == "unparsed"  # loading + unloading together: ask
+    # web: two events in one report → one relay line
+    boss.post("/api/reports", json={"trucks": ["A"], "verb": "ENTER", "verbs": ["LS", "ENTER"], "site": "SOC"})
+    drain(client)
+    assert any(t.startswith("A ENTER LS SOC @") for t in wa.texts(FLEET))

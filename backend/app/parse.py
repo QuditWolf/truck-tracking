@@ -1,6 +1,7 @@
 """Strict, deterministic parser for WhatsApp messages — the same grammar the bot writes (see wa.py).
 
-    A,B LS KN4 @14:32        line 1: TRUCKS VERB [SITE] [@][DD Mon] [HH:MM]
+    A,B LS KN4 @14:32        line 1: TRUCKS VERB [VERB] [SITE] [@][DD Mon] [HH:MM]
+    H LO LEFT SKP            several events at once (same time), in cycle order
     - wet paddy              optional remark lines
     ~Ravi                    optional signature (ignored; the sender is known)
 
@@ -15,12 +16,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
 
+from . import trips
 from .core import IST
 from .registry import Registry
 
 TIME_RE = re.compile(r"^@?([01]?\d|2[0-3])[:.]([0-5]\d)(am|pm)?$", re.I)
 # Words people add that carry no information for the parser
-FILLER = {"at", "trolley", "trolleys", "truck", "trucks", "tractor", "loaded", "the", "is", "has", "@"}
+FILLER = {"at", "trolley", "trolleys", "truck", "trucks", "tractor", "loaded", "the", "is", "has", "@", "and", "&"}
 # Built-in plain-language forms of the cycle verbs (registry verbs themselves have no aliases)
 VERB_WORDS = {"reached": "ENTER", "reach": "ENTER", "entered": "ENTER", "in": "ENTER",
               "leave": "LEFT", "out": "LEFT", "exit": "LEFT"}
@@ -39,10 +41,12 @@ class Parsed:
     remarks: str = ""
     missing: list[str] = field(default_factory=list)
     half: bool = False
+    verbs: list[str] = field(default_factory=list)  # all events in cycle order; verb is the first
+    site_given: bool = False  # a site was written (even if unknown)
 
 
 def _tokens(text: str) -> list[str]:
-    return [t for t in re.split(r"[\s,]+", text.strip()) if t]
+    return [t for t in re.split(r"[\s,+]+", text.strip()) if t]
 
 
 def split_lines(text: str) -> tuple[str, list[str], list[str]]:
@@ -128,32 +132,40 @@ def parse(text: str, reg: Registry, sent: datetime, default_site: Optional[str] 
         if t.code not in trucks:
             trucks.append(t.code)
         i += 1
-    verb = reg.find("verb", toks[i]) if i < len(toks) else None
-    rest = toks[i + 1:] if verb else []
+    verbs = []
+    while i < len(toks) and (v := reg.find("verb", toks[i])):
+        verbs.append(v.code)
+        i += 1
+    verbs = trips.cycle_sort(verbs)
+    verb = verbs[0] if verbs else None
+    rest = toks[i:] if verbs else []
     site = reg.find("site", " ".join(rest)) if rest else None
 
     # LS/LO only happen at loading sites, US/UO only at unloading sites: a mismatch is a mistake → ask
     stype = getattr(site, "site_type", None) if site else None
-    if verb and site and ((verb.code in ("LS", "LO") and stype == "unloading")
-                          or (verb.code in ("US", "UO") and stype == "loading")):
+    if site and ((set(verbs) & {"LS", "LO"} and stype == "unloading") or (set(verbs) & {"US", "UO"} and stype == "loading")):
         site = None
         rest = rest or ["?"]
     missing = []
     if not trucks:
         missing.append("truck")
-    if not verb:
+    if not verbs:
+        missing.append("event")
+    elif trips.mixed_phases(verbs):
         missing.append("event")
     if rest and not site:
         missing.append("site")
-    uses_default = not rest and verb and verb.code in DEFAULT_SITE_VERBS and default_site
-    if not rest and verb and not uses_default:
+    uses_default = not rest and verbs and set(verbs) & set(DEFAULT_SITE_VERBS) and not set(verbs) & {"US", "UO"} \
+        and default_site
+    if not rest and verbs and not uses_default:
         missing.append("site")
     if extra:
         missing.append("format")
     site_code = site.code if site else (default_site if uses_default else None)
-    if missing or (verb and i + 1 + len(rest) != len(toks)):
-        return Parsed(False, trucks, verb.code if verb else None, site_code, when, remarks, missing or ["format"], half)
-    return Parsed(True, trucks, verb.code, site_code, when or sent.replace(second=0, microsecond=0), remarks, half=half)
+    common = dict(verbs=verbs, site_given=bool(rest), half=half)
+    if missing:
+        return Parsed(False, trucks, verb, site_code, when, remarks, missing, **common)
+    return Parsed(True, trucks, verb, site_code, when or sent.replace(second=0, microsecond=0), remarks, **common)
 
 
 def looks_like_event(text: str, reg: Registry) -> bool:

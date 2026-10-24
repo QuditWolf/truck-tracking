@@ -1,5 +1,5 @@
 <script>
-  // Hand-added loads/unloads for trucks nobody reported (untracked trucks). Any member can add.
+  // Hand-added loads/unloads with no known time (untracked trucks, missed reports). Any member can add.
   import Icon from './Icon.svelte'
   import Modal from './Modal.svelte'
   import Picker from './Picker.svelte'
@@ -20,8 +20,8 @@
   let busy = $state(false)
   let error = $state('')
 
-  function start() {
-    trucks = []; kind = 'load'; count = 1; site = registry.site.find((x) => x.code === registry.shift?.default_site && x.site_type === 'loading')?.code || ''; note = ''; postFleet = true; half = false; error = ''
+  export function start(k = 'load') {
+    trucks = []; kind = k; count = 1; site = registry.site.find((x) => x.code === registry.shift?.default_site && x.site_type === 'loading')?.code || ''; note = ''; postFleet = true; half = false; error = ''
     open = true
   }
 
@@ -63,10 +63,10 @@
 <section class="card manual">
   <div class="card-h">
     <div>
-      <h3>Untracked trucks</h3>
-      <span class="mute small">Loads or unloads nobody reported, added by hand</span>
+      <h3>Counts without a time</h3>
+      <span class="mute small">Loads or unloads nobody reported with a time — untracked trucks, missed reports</span>
     </div>
-    <button class="btn quiet sm" onclick={start}><Icon name="plus" size={14} />Add</button>
+    <button class="btn quiet sm" onclick={() => start()}><Icon name="plus" size={14} />Add</button>
   </div>
   {#if entries.length}
     <ul>
@@ -83,7 +83,7 @@
   {/if}
 </section>
 
-<Modal bind:open title="Add untracked truck">
+<Modal bind:open title="Add load / unload (time unknown)">
   <form class="stack" id="manualform" onsubmit={(e) => { e.preventDefault(); save() }}>
     <Picker label="Trucks" options={registry.truck} bind:value={trucks} multi placeholder="Truck / reg. no." />
     <div><button type="button" class="btn quiet sm" onclick={() => (trucks = trucks.includes('UNKNOWN') ? trucks : [...trucks, 'UNKNOWN'])}>+ Unknown trolley</button></div>

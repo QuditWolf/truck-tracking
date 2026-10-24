@@ -47,7 +47,10 @@ def _remarks(r: dict) -> str:
     return rem
 
 
-def line(r: dict, warnings=()) -> str:
+def line(r: dict, warnings=(), also=()) -> str:
+    """One report; `also` = the other reports sent with it (H LO LEFT SKP @14:30)."""
+    if also:
+        r = {**r, "verb": " ".join([r["verb"], *(a["verb"] for a in also)])}
     return message(_join(_fields(r)), r.get("user", ""), _remarks(r), warnings)
 
 

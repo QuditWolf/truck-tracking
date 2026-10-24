@@ -650,3 +650,17 @@ def test_hide_rename_and_retype(client):
     r = boss.post("/api/reports", json={"trucks": ["j"], "verb": "LO", "site": "SKP", "event_time": "2026-10-16T07:00"})
     assert r.json()["trucks"] == ["J"]
     assert [t["code"] for t in boss.get("/api/registry").json()["truck"]] == ["B", "J"]
+
+
+def test_split_shift(client):
+    boss = login(client, "boss@x.org", "Boss")
+    boss.post("/api/admin/registry", json={"kind": "site", "code": "SKP", "site_type": "loading"})
+    sh = boss.post("/api/shifts/start", json={"sites": ["SKP"], "at": "2026-10-16T06:00"}).json()
+    for hm in ("07:00", "20:00"):
+        boss.post("/api/reports", json={"trucks": ["A"], "verb": "LO", "site": "SKP", "event_time": f"2026-10-16T{hm}"})
+    assert boss.post(f"/api/admin/shifts/{sh['id']}/split", json={"at": "2026-10-16T05:00"}).status_code == 400
+    new = boss.post(f"/api/admin/shifts/{sh['id']}/split", json={"at": "2026-10-16T18:00"}).json()
+    assert new["sites"] == ["SKP"] and new["ended_at"] is None
+    listed = {s["id"]: s for s in boss.get("/api/admin/shifts").json()}
+    assert listed[sh["id"]]["ended_at"].startswith("2026-10-16T17:59") and listed[sh["id"]]["loaded"] == 1
+    assert listed[new["id"]]["loaded"] == 1 and listed[new["id"]]["open"]

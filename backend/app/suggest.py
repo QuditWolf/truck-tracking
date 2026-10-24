@@ -41,11 +41,15 @@ def _slot_for_verb(verb: str, last: int) -> Optional[int]:
 
 
 def _site(conn, reg: Registry, history: list[trips.Trip], slot: int, last_event) -> Optional[str]:
+    return _site_how(conn, reg, history, slot, last_event)[0]
+
+
+def _site_how(conn, reg: Registry, history: list[trips.Trip], slot: int, last_event) -> tuple[Optional[str], str]:
     """Site for the suggested step. The phase decides the kind: after loading (LO, LEFT loading) the
     next stop is an unloading site, after unloading (UO, LEFT unloading) a loading site."""
     kind = "loading" if slot <= 3 else "unloading"
     if last_event and last_event.site and last_event.site_type == kind and (slot <= 3) == (_phase_slot(last_event) <= 3):
-        return last_event.site  # mid-phase (LS → LO → LEFT): still at the same site
+        return last_event.site, "here"  # mid-phase (LS → LO → LEFT): still at the same site
     used = [e.site for t in reversed(history) for k in sorted(t.slots, reverse=True)
             if (e := t.slots[k]).site and e.site_type == kind]
     from .reports import shift_sites
@@ -56,14 +60,15 @@ def _site(conn, reg: Registry, history: list[trips.Trip], slot: int, last_event)
         if item and item.site_type == kind:
             defaults.append(item.code)
     if defaults:  # the shift's default sites first; among them, where this truck last went
-        return next((c for c in used if c in defaults), defaults[0])
+        pick = next((c for c in used if c in defaults), defaults[0])
+        return pick, "only_default" if len(defaults) == 1 else "default"
     if used:
-        return used[0]
+        return used[0], "history"
     shifts = load_shifts(conn)
     usage = site_usage(conn, reg, shifts[-1]) if shifts else {}
     typed = {s["code"]: s for s in reg.listing("site") if s["site_type"] == kind}
     busiest = sorted((n, code) for code, n in usage.items() if code in typed)
-    return busiest[-1][1] if busiest else None
+    return (busiest[-1][1], "busiest") if busiest else (None, "")
 
 
 def _phase_slot(e) -> int:
@@ -82,13 +87,19 @@ def suggest(conn, truck_codes: list[str], verb: Optional[str] = None) -> dict:
         last_event = last_trip.slots[last] if last_trip else None
         slot = _slot_for_verb(verb, last) if verb else _next_slot(last)
         if slot is None:
-            per[code] = {"verb": verb, "site": None}
+            per[code] = {"verb": verb, "site": None, "how": ""}
             continue
-        per[code] = {"verb": verb or trips.SLOT_NAMES[slot], "site": _site(conn, reg, history, slot, last_event),
+        site, how = _site_how(conn, reg, history, slot, last_event)
+        per[code] = {"verb": verb or trips.SLOT_NAMES[slot], "site": site, "how": how,
                      "after": f"{last_event.verb} {last_event.site or ''}".strip() if last_event else None}
     verbs = {p["verb"] for p in per.values()}
     sites = {p["site"] for p in per.values()}
     common_verb = verbs.pop() if len(verbs) == 1 else None
-    return {"verb": common_verb,
-            "site": sites.pop() if common_verb and len(sites) == 1 else None,
-            "per_truck": per}
+    site = sites.pop() if common_verb and len(sites) == 1 else None
+    # how sure the site is, weakest truck wins: here (truck is there now) > only_default > default > history > busiest
+    hows = [p.get("how", "") for p in per.values()]
+    how = min(hows, key=lambda h: HOW_RANK.index(h)) if site and hows else ""
+    return {"verb": common_verb, "site": site, "how": how, "per_truck": per}
+
+
+HOW_RANK = ["", "busiest", "history", "default", "only_default", "here"]

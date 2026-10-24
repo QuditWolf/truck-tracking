@@ -1,4 +1,5 @@
 <script>
+  let manual = $state()
   import Icon from '../lib/Icon.svelte'
   import ManualCounts from '../lib/ManualCounts.svelte'
   import Stat from '../lib/Stat.svelte'
@@ -98,6 +99,9 @@
       <input class="input sm pick" type="date" bind:value={to} />
     {/if}
     <span class="grow"></span>
+    {#if mode === 'shift' && data?.shift_id}
+      <button class="btn quiet sm" onclick={() => manual?.start('unload')}><Icon name="plus" size={15} />Unload, no time</button>
+    {/if}
     {#if data?.text}
       <button class="btn quiet sm" onclick={copy}><Icon name="copy" size={15} />Copy</button>
       <button class="btn signal sm" onclick={share}><Icon name="send" size={15} />Share to WhatsApp</button>
@@ -203,7 +207,7 @@
       {/if}
 
       {#if mode === 'shift' && data.shift_id}
-        <div class="wide"><ManualCounts shiftId={data.shift_id} entries={data.manual || []} perTruck={c.per_truck} {registry} {me} /></div>
+        <div class="wide"><ManualCounts bind:this={manual} shiftId={data.shift_id} entries={data.manual || []} perTruck={c.per_truck} {registry} {me} /></div>
       {/if}
 
       {#if c.notes?.length || data.flags?.length}
